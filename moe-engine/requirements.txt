@@ -1,0 +1,12 @@
+torch>=2.5.0
+triton>=3.0.0
+numpy>=1.26.0
+boto3>=1.34.0
+botocore>=1.34.0
+pyyaml>=6.0.1
+tensorboard>=2.16.0
+pytest>=8.0.0
+pytest-mock>=3.12.0
+pytest-timeout>=2.3.0
+moto>=5.0.0
+psutil>=5.9.0

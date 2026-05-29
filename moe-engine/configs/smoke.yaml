@@ -1,0 +1,53 @@
+# Smoke-test config: minimal compute footprint, CPU-only paths.
+# Used for CI / launch.sh end-to-end verification — overrides the
+# hyperscale defaults in default.yaml with toy dimensions that finish
+# in seconds on a single CPU process.
+
+model:
+  hidden_dim: 32
+  num_layers: 2
+  num_experts: 4
+  top_k: 2
+  capacity_factor: 1.25
+  ffn_dim: 64
+  vocab_size: 128
+  sequence_length: 8
+  dtype: float32
+
+training:
+  global_batch_size: 4
+  micro_batch_size: 2
+  learning_rate: 3.0e-4
+  weight_decay: 0.1
+  grad_clip: 1.0
+  max_steps: 2
+  log_interval: 1
+  ckpt_interval: 1
+  warmup_steps: 0
+
+parallelism:
+  data_parallel: 1
+  expert_parallel: 1
+  tensor_parallel: 1
+  pipeline_parallel: 1
+
+checkpoint:
+  local_dir: /tmp/moe-engine/ckpts
+  remote_uri: file:///tmp/moe-engine/remote
+  async_workers: 1
+  retention: 2
+
+elastic:
+  min_nodes: 1
+  max_nodes: 1
+  rdzv_backend: c10d
+  rdzv_endpoint: localhost:29400
+  health_check_interval_s: 5
+  drop_grace_period_s: 30
+
+telemetry:
+  log_dir: /tmp/moe-engine/logs
+  tensorboard_dir: /tmp/moe-engine/logs/tb
+  json_path: /tmp/moe-engine/logs/step.jsonl
+  mfu_target: 0.55
+  hardware_peak_tflops: 989.0
