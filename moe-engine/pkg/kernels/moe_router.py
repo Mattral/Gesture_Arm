@@ -368,7 +368,7 @@ def _reference_route_fp64(
 # ==========================================================================
 # Autograd Function -- single entry-point used by `MoERouter`.
 # ==========================================================================
-class MoERouterAutograd(torch.autograd.Function):
+class MoERouterFunction(torch.autograd.Function):
     """Differentiable Top-K router.
 
     Forward chooses Triton on CUDA-capable devices, falls back to the
@@ -452,6 +452,9 @@ class MoERouterAutograd(torch.autograd.Function):
         grad_gate_w = tokens.t() @ grad_logits
 
         return grad_tokens, grad_gate_w, None, None
+
+
+MoERouterAutograd = MoERouterFunction
 
 
 def _reference_backward_fp64(
@@ -543,7 +546,7 @@ def moe_topk_route(
         flat = tokens
     else:
         raise ValueError(f"tokens must be rank 2 or 3, got {tokens.dim()}")
-    idx, w = MoERouterAutograd.apply(flat, gate_w, k, force_reference)
+    idx, w = MoERouterFunction.apply(flat, gate_w, k, force_reference)
     return idx, w
 
 
@@ -599,6 +602,7 @@ class MoERouter(torch.nn.Module):
             B = 1
             S = flat.shape[0]
             H = flat.shape[1]
+        N = flat.shape[0]
         assert H == self.hidden_dim
 
         gate_w = self.gate_w
@@ -626,6 +630,25 @@ class MoERouter(torch.nn.Module):
         dispatch_cnt = torch.bincount(
             idx.reshape(-1), minlength=self.num_experts
         ).to(torch.long)
+
+        # ===== TOKEN CONSERVATION INVARIANT (fail-fast guard) =====
+        # Each of N tokens gets K assignments, so total must be N*K.
+        # This is a critical safety check: if violated, training will diverge silently.
+        total_dispatched = dispatch_cnt.sum().item()
+        expected_total = N * self.top_k
+        assert total_dispatched == expected_total, (
+            f"Token loss detected in router: {total_dispatched} routed tokens != "
+            f"expected {expected_total} (N={N}, K={self.top_k}). "
+            f"This indicates a routing bug or silent data corruption."
+        )
+        # Also verify no -1 or NaN expert indices (would indicate failed topk)
+        assert not torch.isnan(idx.float()).any(), (
+            "NaN detected in expert indices; topk kernel may have failed."
+        )
+        assert (idx >= 0).all() and (idx < self.num_experts).all(), (
+            f"Out-of-range expert indices detected; "
+            f"min={idx.min()}, max={idx.max()}, E={self.num_experts}"
+        )
 
         # ------ Telemetry profile ------
         # SRAM footprint for a 64x64 tile of fp32 == 64*64*4 == 16 KiB plus the

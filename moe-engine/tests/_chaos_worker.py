@@ -148,8 +148,21 @@ def main() -> int:
          pid=os.getpid(), torch_version=torch.__version__)
 
     # ----- process group ------------------------------------------------
-    dist.init_process_group(backend="gloo", init_method="env://")
-    emit(event="pg_ready")
+    # Gloo can sometimes fail to connect transiently in containerized
+    # or heavily-loaded CI environments. Retry a few times before
+    # giving up so the chaos test exercises the recovery logic instead
+    # of flaky infra failures.
+    max_init_attempts = 6
+    for attempt in range(1, max_init_attempts + 1):
+        try:
+            dist.init_process_group(backend="gloo", init_method="env://")
+            emit(event="pg_ready")
+            break
+        except Exception as e:
+            emit(event="pg_init_retry", attempt=attempt, error=str(e))
+            if attempt == max_init_attempts:
+                raise
+            time.sleep(0.5 * attempt)
 
     # ----- model + optimizer + checkpointer ----------------------------
     model = _build_model()

@@ -2,6 +2,7 @@
 from pkg.kernels.moe_router import (
     MoERouter,
     moe_topk_route,
+    MoERouterFunction,
     MoERouterAutograd,
     TRITON_AVAILABLE,
 )
@@ -9,6 +10,7 @@ from pkg.kernels.moe_router import (
 __all__ = [
     "MoERouter",
     "moe_topk_route",
+    "MoERouterFunction",
     "MoERouterAutograd",
     "TRITON_AVAILABLE",
 ]

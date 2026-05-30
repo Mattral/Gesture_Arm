@@ -23,7 +23,7 @@ import torch
 from pkg.kernels.moe_router import (
     MoERouter,
     moe_topk_route,
-    MoERouterAutograd,
+    MoERouterFunction,
     _reference_route_fp64,
 )
 
@@ -79,7 +79,7 @@ def test_backward_tolerance(B, S, H, E, K):
     # ------- analytical backward through MoERouterAutograd
     tokens2 = tokens.detach().float().requires_grad_(True)
     gate2 = gate_w.detach().float().requires_grad_(True)
-    idx, w = MoERouterAutograd.apply(tokens2, gate2, K, True)
+    idx, w = MoERouterFunction.apply(tokens2, gate2, K, True)
     (w * grad_w.float()).sum().backward()
 
     assert torch.allclose(

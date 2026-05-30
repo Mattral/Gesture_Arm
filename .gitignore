@@ -78,6 +78,13 @@ agenthub/agents/youtube/db
 
 memory/test_credentials.md
 
+# Agent scaffolding artifacts
+pid.txt
+verify_pid.txt
+*.pid
+memory/
+.emergent/
+
 # Mobile development
 android-sdk/
 .env

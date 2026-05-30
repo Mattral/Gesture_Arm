@@ -377,30 +377,24 @@ class DistributedMoELayer(nn.Module):
         # Per-EP-rank send counts.
         send_counts = torch.bincount(target_rank, minlength=ep).to(torch.int64)
 
-        # 3. Dispatch (overlapped with combine of previous layer in async loops).
+        # 3. Dispatch tokens (overlapped with combine of previous layer in async loops).
         received, recv_counts, ev_disp = all_to_all_dispatch(
             tokens_sorted, send_counts, self.topology,
         )
-        idx_recv, _, _ = all_to_all_dispatch(
-            idx_sorted.to(torch.int64).unsqueeze(1).contiguous().float()  # cast for collective
-              .to(torch.int64),                                          # ints can ride a contig buf
-            send_counts, self.topology,
-        ) if False else (idx_sorted, send_counts, None)                  # We actually carry idx the same way:
-        # NOTE: the production path packs (expert_id, slot_id) into a side
-        # channel via a parallel small all_to_all. For brevity here we
-        # re-derive the local expert id from `received` ordering using
-        # `recv_counts` plus the known EP layout, which is sufficient
-        # because we sort by target rank above.
 
-        # 4. Run local experts. We must split `received` further by *which*
-        #    local expert each token is destined for. To recover that, we
-        #    also dispatched `idx_sorted`; but since the integer payload
-        #    above was a placeholder, we instead recover by exchanging a
-        #    small per-token expert-id tensor explicitly:
+        # 4. Exchange expert IDs alongside tokens (so receiving rank knows
+        #    which local expert each token belongs to).
+        # Note: Expert IDs are sent via a separate small all_to_all_single call.
         ids_to_send = idx_sorted.to(torch.int64)                          # [N*K]
         ids_recv = self._exchange_ids(ids_to_send, send_counts, recv_counts)
 
-        # Compute received outputs.
+        # 4b. Compute expert outputs: route each token to its assigned local expert.
+        # Verify ids_recv matches expected shape for safety.
+        assert ids_recv.shape[0] == received.shape[0], (
+            f"Expert ID mismatch: got {ids_recv.shape[0]} ids but "
+            f"{received.shape[0]} tokens"
+        )
+        
         expert_out = torch.empty_like(received)
         for li, gi in enumerate(self.local_expert_ids):
             mask = ids_recv == gi
@@ -429,6 +423,19 @@ class DistributedMoELayer(nn.Module):
         unsorted = combined[inverse_order]                               # [N*K, H]
         weighted = unsorted * w_sorted.unsqueeze(-1).to(unsorted.dtype)  # [N*K, H]
         out = weighted.view(N, K, H).sum(dim=1)                          # [N, H]
+        
+        # ===== TOKEN CONSERVATION INVARIANT (post-combine check) =====
+        # After dispatch + compute + combine, we should have exactly [N, H] outputs.
+        # If shape is wrong, tokens were lost or duplicated in all-to-all.
+        assert out.shape == (N, H), (
+            f"Combine shape mismatch: expected ({N}, {H}), got {out.shape}. "
+            f"Indicates token loss/duplication in all-to-all collectives."
+        )
+        # Verify no NaN/Inf introduced by expert compute or combine.
+        assert not torch.isnan(out).any(), (
+            "NaN detected after combine; expert compute or collective may have failed."
+        )
+        
         return out.view(B, S, H)
 
     # ----------------------------------------------------------------------
