@@ -27,4 +27,4 @@ Security
 - Do not commit secrets; use environment variables for credentials!
 
 License
-- This repo is Apache-2.0 licensed. See `LICENSE` for details.
+- This repo is MIT licensed. See `LICENSE` for details.
