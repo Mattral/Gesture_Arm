@@ -24,7 +24,7 @@ Coding guidelines
 - Preserve public APIs in `pkg/` where practical.
 
 Security
-- Do not commit secrets; use environment variables for credentials.
+- Do not commit secrets; use environment variables for credentials!
 
 License
 - This repo is Apache-2.0 licensed. See `LICENSE` for details.
