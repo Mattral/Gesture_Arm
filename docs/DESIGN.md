@@ -58,3 +58,4 @@ Status Summary
 - ✅ Async checkpointing with chunked NVMe I/O (256MB chunks, O_DIRECT fallback)
 - ✅ Etcd rendezvous for scale >100 nodes with epoch tracking
 - ⚠️ Chaos Scenario A (node kill + reshard): lower priority, not blocking
+
