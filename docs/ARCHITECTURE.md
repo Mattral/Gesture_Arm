@@ -41,3 +41,4 @@ Implementation Status (✅ Complete)
 - Etcd rendezvous: generation tracking for >100 node scale
 - Sequence parallelism: prevents activation duplication on TP > 1
 - Telemetry: real CUDA event timing, memory stats, kernel profiling
+
