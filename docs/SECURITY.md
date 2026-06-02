@@ -18,3 +18,4 @@ Guidelines for securing deployments and handling secrets.
 
 5. Vulnerability disclosure
 - Open an issue with details if you find a security issue. Do not post secrets publicly.
+
