@@ -6,9 +6,9 @@ Multi-dimensional distributed topology for hyperscale MoE training.
 
 Combines:
 
-  * **PyTorch 2.5+ native `init_device_mesh`** to construct a 2D DeviceMesh
-    `(dp, ep)`. Slots are reserved (and documented) for a future 4D mesh
-    `(dp, tp, pp, ep)` once Tensor and Pipeline parallelism are wired in.
+  * **PyTorch 2.5+ native `init_device_mesh`** to construct a 2D/3D DeviceMesh
+    currently `(dp, ep)` or `(dp, tp, ep)`. Slots are reserved for a future
+    4D mesh `(dp, tp, pp, ep)` once Tensor and Pipeline parallelism are wired in.
   * **FSDP2** (`torch.distributed._composable.fsdp.fully_shard`) for
     per-parameter sharded DTensor data-parallelism. No FlatParameter, no
     monolithic FSDP1 wrapper – pure DTensor sharding along the `dp` axis.
@@ -105,6 +105,22 @@ def _tp_process_group(topology: "ParallelTopology") -> "dist.ProcessGroup | None
     return group
 
 
+def _pp_process_group(topology: "ParallelTopology") -> "dist.ProcessGroup | None":
+    if topology.pp_size == 1 or not dist.is_initialized():
+        return None
+    if topology.mesh is not None:
+        try:
+            return topology.mesh["pp"].get_group()
+        except Exception:
+            pass
+
+    assert topology.world_size == topology.dp_size * topology.tp_size * topology.pp_size * topology.ep_size, (
+        "world_size must equal dp_size * tp_size * pp_size * ep_size for PP groups"
+    )
+    # TODO: define PP grouping semantics once pipeline stage mapping exists.
+    return None
+
+
 # ==========================================================================
 # Topology descriptor – immutable record of the current mesh slice. Recomputed
 # (not mutated) by the elastic state-machine when nodes drop/rejoin.
@@ -122,13 +138,17 @@ class ParallelTopology:
 
     @property
     def dp_rank(self) -> int:
-        if self.tp_size == 1:
-            return (self.rank // self.ep_size) % self.dp_size
-        return (self.rank // (self.tp_size * self.ep_size)) % self.dp_size
+        denominator = self.tp_size * self.pp_size * self.ep_size
+        return (self.rank // denominator) % self.dp_size
 
     @property
     def tp_rank(self) -> int:
-        return (self.rank // self.ep_size) % self.tp_size
+        denominator = self.pp_size * self.ep_size
+        return (self.rank // denominator) % self.tp_size
+
+    @property
+    def pp_rank(self) -> int:
+        return (self.rank // self.ep_size) % self.pp_size
 
     @property
     def ep_rank(self) -> int:
@@ -152,12 +172,15 @@ def build_topology(
     dp_size: int,
     ep_size: int,
     tp_size: int = 1,
+    pp_size: int = 1,
     device_type: str = "cuda",
 ) -> ParallelTopology:
     """Initialize (or query) the process group and return a Topology.
 
     Falls back to a degenerate 1-rank topology on CPU-only systems so the
     rest of the code path (and the test suite) can run anywhere.
+
+    The `pp_size` axis is reserved for future pipeline parallelism wiring.
     """
     world_size = dist.get_world_size() if dist.is_initialized() else 1
     rank = dist.get_rank() if dist.is_initialized() else 0
@@ -169,16 +192,24 @@ def build_topology(
             world_size=1, rank=0, dp_size=1, ep_size=1, tp_size=1, mesh=None, device=dev,
         )
 
-    assert dp_size * tp_size * ep_size == world_size, (
-        f"dp_size({dp_size}) * tp_size({tp_size}) * ep_size({ep_size}) "
-        f"must equal world_size({world_size})"
+    assert dp_size * tp_size * pp_size * ep_size == world_size, (
+        f"dp_size({dp_size}) * tp_size({tp_size}) * pp_size({pp_size}) * "
+        f"ep_size({ep_size}) must equal world_size({world_size})"
     )
-    mesh_shape = (dp_size, tp_size, ep_size) if tp_size > 1 else (dp_size, ep_size)
-    mesh_dim_names = ("dp", "tp", "ep") if tp_size > 1 else ("dp", "ep")
+    mesh_shape = [dp_size]
+    mesh_dim_names = ["dp"]
+    if tp_size > 1:
+        mesh_shape.append(tp_size)
+        mesh_dim_names.append("tp")
+    if pp_size > 1:
+        mesh_shape.append(pp_size)
+        mesh_dim_names.append("pp")
+    mesh_shape.append(ep_size)
+    mesh_dim_names.append("ep")
     mesh = init_device_mesh(
         device_type,
-        mesh_shape,
-        mesh_dim_names=mesh_dim_names,
+        tuple(mesh_shape),
+        mesh_dim_names=tuple(mesh_dim_names),
     )
     dev = torch.device(f"{device_type}:{rank % max(torch.cuda.device_count(), 1)}")
     return ParallelTopology(

@@ -1,12 +1,12 @@
 # `moe-engine` &nbsp;&middot;&nbsp; A Composed Mixture-of-Experts Engine
 
-> **Production-grade hyperscale MoE training runtime.**
-> Designed to keep a 10,000-GPU pre-training job alive end-to-end:
-> sparse Top-K routing in custom Triton, true 4-D parallelism (TP × PP × FSDP2 × EP)
-> on PyTorch 2.12+, asynchronous sharded checkpointing through a two-tier
-> (NVMe → S3 / MinIO) durable store, and a TorchElastic state-machine that
-> evicts dead ranks, reshards experts, and hot-resumes training without
-> operator intervention.
+> **Production-grade sparse MoE training runtime.**
+> Designed to keep large-scale pre-training jobs alive end-to-end:
+> sparse Top-K routing in custom Triton, DP+EP distributed training with TP
+> support in core layers and PP work in progress, on PyTorch 2.12+,
+> asynchronous sharded checkpointing through a two-tier (NVMe → S3 / MinIO)
+> durable store, and a TorchElastic state-machine that evicts dead ranks,
+> reshards experts, and hot-resumes training without operator intervention.
 
 [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](#license)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.12%2B-ee4c2c.svg)](https://pytorch.org/)
@@ -38,7 +38,7 @@ teams must instead be co-designed in a single repository:
 | Layer | Concern | This repo's contribution |
 |------|---------|---------------------------|
 | **Hardware-aware kernels** | Memory coalescing, SRAM tiling, Tensor-Core feeding for sparse Top-K routing | `pkg/kernels/moe_router.py` — Triton forward + (planned) backward, dynamic-bound masking, 128-byte aligned loads |
-| **Distributed runtime** | 4-D parallelism, FSDP2 DTensor sharding, EP `all_to_all_single` overlapped with compute | `pkg/distributed/parallel_mesh.py` — `init_device_mesh((pp, dp, ep, tp))`, async-op collective overlap, dedicated CUDA streams |
+| **Distributed runtime** | DP+EP training with TP support in core layers, FSDP2 DTensor sharding, EP `all_to_all_single` overlapped with compute | `pkg/distributed/parallel_mesh.py` — `init_device_mesh((dp, ep))` with TP axis reserved, dedicated comm stream overlap, dedicated CUDA streams |
 | **Fault-tolerant infra** | Async pinned-memory checkpointing, S3/MinIO mirror, evict→reshard→reload state-machine | `pkg/elastic/fault_monitor.py` — TorchElastic harness, `SHARDED_STATE_DICT`, signal-driven flush |
 
 `moe-engine` keeps these three layers in one binary so an MFU regression or a
@@ -62,12 +62,12 @@ checkpoint-stall bug can be isolated to a single line, not a six-team incident.
 │   parallel_mesh.py        │   │   fault_monitor.py           │   │   moe_router.py              │
 │                           │   │                              │   │                              │
 │ • ParallelTopology        │   │ • ElasticTrainerHarness      │   │ • MoERouter (nn.Module)      │
-│ • init_device_mesh(       │   │ • AsyncCheckpointer          │   │   ├─ forward: Triton @jit    │
-│     (pp,dp,ep,tp))        │   │ • _PinnedHostStager          │   │   │   - dynamic-bound mask   │
-│ • DistributedMoELayer     │   │ • ClusterStateMachine        │   │   │   - 128B aligned loads   │
-│ • apply_fsdp2(...)        │   │ • LocalNVMeAdapter           │   │   └─ backward (TD-04)        │
-│ • all_to_all_dispatch     │   │ • S3Adapter (boto3)          │   │ • CPU autograd fallback      │
-│   (async_op=True)         │   │                              │   │                              │
+│ • init_device_mesh((dp,ep)) │   │ • AsyncCheckpointer          │   │   ├─ Triton fused forward /  │
+│   with TP axis reserved    │   │ • _PinnedHostStager          │   │   │     autograd backward      │
+│ • DistributedMoELayer     │   │ • ClusterStateMachine        │   │   │   - dynamic-bound mask     │
+│ • apply_fsdp2(...)        │   │ • LocalNVMeAdapter           │   │   │   - 128B aligned loads     │
+│ • all_to_all_dispatch     │   │ • S3Adapter (boto3)          │   │   └─ CPU fallback path       │
+│   on a dedicated comm stream │ │                              │   │                              │
 └───────────┬───────────────┘   └─────────────┬────────────────┘   └──────────────┬───────────────┘
             │                                 │                                   │
             │   DeviceMesh sub-meshes         │   pinned-host snapshot queue      │  routing tokens
@@ -97,19 +97,19 @@ checkpoint-stall bug can be isolated to a single line, not a six-team incident.
                     │ 1. router (Triton fwd)                  │
                     │ 2. sort by target EP rank               │
                     │ 3. all_to_all_single                    │
-                    │    (async_op=True)  ──► launch  ────────┐
+                    │    on a dedicated comm stream ──► launch  ────────┐
                     │ 4. independent compute  ─── overlap ───►│  GPU compute
                     │ 5. work.wait() on dispatch              │  in flight
                     │ 6. local SwiGLU experts                 │
-                    │ 7. all_to_all_combine (async_op=True) ──┘
+                    │ 7. all_to_all_combine on a dedicated comm stream ──┘
                     │ 8. weight ⊗ combine → reduce-K         │
                     └─────────────────────────────────────────┘
 ```
 
-Per-rank a single 4-D coordinate `(pp_rank, dp_rank, ep_rank, tp_rank)`
-identifies its mesh slice. Sub-meshes are obtained by name:
+Per-rank a coordinate identifies its mesh slice. Sub-meshes are obtained by name:
 `mesh["dp"]` (for FSDP2 sharding), `mesh["ep"]` (for `all_to_all_single`),
-`mesh["tp"]` (for column-parallel linears), `mesh["pp"]` (for stage send/recv).
+`mesh["tp"]` (for TP layer sharding when enabled), and `pp` support is reserved
+for future pipeline stage mapping.
 
 ---
 
@@ -245,7 +245,7 @@ every dimension for laptop runs. Every block:
 
 ```yaml
 model:           # transformer hyperparameters
-parallelism:     # 4-D topology factors, must product to WORLD_SIZE
+parallelism:     # topology axes, must product to WORLD_SIZE
 training:        # batch sizes, optimizer, schedule
 checkpoint:      # local NVMe dir, remote URI, async workers, retention
 elastic:         # rendezvous, heartbeat interval, drop grace, min_nodes
@@ -258,15 +258,15 @@ telemetry:       # log dirs, MFU target, hardware peak TFLOPs
 
 | Invariant | Statement | Tested in |
 |-----------|-----------|-----------|
-| 4-D Mesh shape | `\|TP\|·\|PP\|·\|FSDP2\|·\|EP\| = world_size` | `tests/test_distributed.py::test_topology_4d_product` |
-| Token conservation | `Σ_r dispatched_r = B·S·K` | `tests/test_distributed.py`, `tests/test_chaos.py` |
-| Numerical tolerance | `atol < 1e-5`, `rtol < 1e-5` (fp64 reference) | `tests/test_kernels.py` |
-| Checksum identity | `hash(state_dict_post_load) == hash(state_dict_pre_save)` | `tests/test_elastic.py` |
-| Monotonic progression | `step_{n+1} > step_n` across every restart generation | `tests/test_chaos.py` |
-| Comm-compute overlap | `all_to_all_single` issued with `async_op=True` and `Work.wait()` deferred until tensors are *consumed* | `pkg/distributed/parallel_mesh.py::DistributedMoELayer.forward` |
-| Async-ckpt zero-leak | After `harness.checkpoint()`, no device-resident references survive into the writer thread queue | `tests/test_elastic.py::test_async_ckpt_no_device_refs` |
-| MFU target | `>= 0.55` of theoretical peak BF16 | `pkg/utils/mfu.py` |
-| Dynamic MoE FLOP | `FLOPs_step = 2·T_active·P_dense + 2·T_routed·P_experts` | `pkg/utils/mfu.py` (TD-04) |
+| Mesh shape | `dp_size · ep_size · tp_size = world_size` for active axes | `moe-engine/tests/test_distributed.py`, `moe-engine/tests/test_distributed_invariants.py` |
+| Token conservation | `Σ_r dispatched_r = B·S·K` | `moe-engine/tests/test_distributed.py`, `moe-engine/tests/test_distributed_invariants.py` |
+| Numerical tolerance | `atol < 1e-5`, `rtol < 1e-5` (fp64 reference) | `moe-engine/tests/test_kernels.py` |
+| Checksum identity | `hash(state_dict_post_load) == hash(state_dict_pre_save)` | `moe-engine/tests/test_elastic.py` |
+| Monotonic progression | `step_{n+1} > step_n` across every restart generation | `moe-engine/tests/test_chaos.py` |
+| Comm-compute overlap | EP dispatch/combine use a dedicated CUDA stream and event synchronization | `moe-engine/pkg/distributed/parallel_mesh.py::DistributedMoELayer.forward` |
+| Async-ckpt zero-leak | After `harness.checkpoint()`, no device-resident references survive into the writer thread queue | `moe-engine/tests/test_elastic.py::test_async_ckpt_no_device_refs` |
+| MFU target | `>= 0.55` of theoretical peak BF16 | `moe-engine/pkg/utils/mfu.py` |
+| Dynamic MoE FLOP | `FLOPs_step = 2·T_active·P_dense + 2·T_routed·P_experts` | `moe-engine/pkg/utils/mfu.py` (TD-04) |
 
 CI fails on violation of any of the above.
 
@@ -288,30 +288,22 @@ TensorBoard via `pkg/telemetry/logger.py`):
     "sram_bytes_per_block": 49152,
     "achieved_bw_gbps": 1843.0,
     "tokens_per_expert_mean": 256.4,
-    "tokens_per_expert_std":  18.7,
+    "tokens_per_expert_std": 18.7,
     "used_triton": true
   },
   "collective": {
     "all_to_all_dispatch_ms": 0.87,
-    "all_to_all_combine_ms":  0.91,
-    "all_gather_ms": 1.21,
-    "reduce_scatter_ms": 1.05,
-    "overlap_ratio": 0.78
+    "all_to_all_combine_ms": 0.91
   },
   "memory": {
     "peak_allocated_gb": 62.4,
     "reserved_gb": 70.0,
-    "leak_delta_gb": 0.0,
-    "pinned_host_mb": 1842.0
+    "leak_delta_gb": 0.0
   },
   "infra": {
     "async_ckpt_commit_ms": 412.0,
     "active_nodes": 1250,
-    "ep_world_size": 64,
-    "tp_world_size": 8,
-    "pp_world_size": 4,
-    "dp_world_size": 4,
-    "restart_generation": 2
+    "ep_world_size": 64
   }
 }
 ```
@@ -344,9 +336,10 @@ Scenarios:
 ## 11. Repository layout
 
 ```
-moe-engine/
-├── README.md                       ← this file
-├── roadmap.md                      ← Protocol-1 state ledger (live)
+README.md                          ← this file
+docs/                              ← repository documentation
+moe-engine/                        ← python package root
+├── README.md                      ← package-specific README
 ├── pyproject.toml
 ├── requirements.txt
 ├── configs/
@@ -356,7 +349,7 @@ moe-engine/
 │   ├── kernels/
 │   │   └── moe_router.py           ← Triton Top-K routing kernel
 │   ├── distributed/
-│   │   └── parallel_mesh.py        ← 4-D DeviceMesh, FSDP2, EP a2a (async_op=True)
+│   │   └── parallel_mesh.py        ← DP+EP device mesh, TP layer sharding, PP shim
 │   ├── elastic/
 │   │   └── fault_monitor.py        ← AsyncCkpt + pinned staging + state-machine
 │   ├── telemetry/
@@ -381,4 +374,4 @@ moe-engine/
 
 ## 12. License
 
-Apache 2.0. See `LICENSE` (TODO).
+Apache 2.0. See `LICENSE`.

@@ -1,7 +1,7 @@
 # moe-engine Roadmap
 
-**Last Updated:** May 31, 2026  
-**Current Phase:** P0 (Correctness Foundation)
+**Last Updated:** June 3, 2026  
+**Current Phase:** P0 (Correctness Foundation + 4D topology prework)
 
 ## Legend
 - ✅ Complete + CI-verified  
@@ -38,10 +38,10 @@
 
 ## v0.2 — Complete 4D Parallelism (Planned)
 
-- [❌] **P1-1: Tensor Parallelism** — ColumnParallelLinear + RowParallelLinear
-- [❌] **P1-2: Pipeline Parallelism** — PipelineStage + 1F1B schedule
+- [⚠️] **P1-1: Tensor Parallelism** — ColumnParallelLinear + RowParallelLinear (topology placeholder path started)
+- [⚠️] **P1-2: Pipeline Parallelism** — PipelineStage + 1F1B schedule (pp_size reserved and rank math generalized)
 - [❌] **P1-3: Real MFU Calculation** — MoE-aware FLOPs accounting
-- [❌] **P1-4: Telemetry Wired to Real Measurements** — CUDA event timing, peak memory stats
+- [⚠️] **P1-4: Telemetry Wired to Real Measurements** — CUDA event timing, peak memory stats (placeholder fields remain)
 
 ---
 
@@ -102,6 +102,14 @@
 
 ---
 
+## Prework: 4D topology placeholder work
+
+- [⚠️] Add `pp_size` to `build_topology` and `ParallelTopology`; keep defaults at `1`
+- [⚠️] Generalize rank calculation to support future `dp,tp,pp,ep` ordering
+- [⚠️] Pass `tensor_parallel` and `pipeline_parallel` from config through `train.py`
+- [⚠️] Reserve 4D `DeviceMesh` axis creation; do not change default DP/EP execution
+- [⚠️] Add unit tests for `pp_size=1` regression and 4D rank semantics once stable
+
 ## Next Actions (High Priority)
 
 1. **Stabilize Scenario A** — Investigate Gloo connection refused pattern on restart
@@ -113,7 +121,11 @@
    - `RowParallelLinear` with reduce-scatter on output
    - Wire into `DistributedMoELayer` expert FFN
 
-3. **Implement P1-3 (MFU Calculation)** — Required for perf claims
+3. **Implement P1-2 (Pipeline Parallelism)** — Complete 1F1B staging and PP rank mapping
+   - Define pipeline stage groups and `pp_rank` execution semantics
+   - Add pipeline-aware parameter placement and activation routing
+
+4. **Implement P1-3 (MFU Calculation)** — Required for perf claims
    - Account for sparse expert activation: `(K/E) * P_expert`
    - Validate against H100 peak FLOPs
 

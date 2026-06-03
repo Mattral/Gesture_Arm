@@ -135,16 +135,21 @@ def main() -> None:
 
     dp = cfg["parallelism"]["data_parallel"]
     ep = cfg["parallelism"]["expert_parallel"]
+    tp = cfg["parallelism"]["tensor_parallel"]
+    pp = cfg["parallelism"]["pipeline_parallel"]
     # Sanity: if launched with a smaller world than the config expects,
-    # collapse dp first then ep so the run still boots (production-friendly).
-    if world_size < dp * ep:
-        dp = max(1, world_size // ep)
-        if dp * ep > world_size:
-            ep = max(1, world_size)
-            dp = max(1, world_size // ep)
+    # collapse dp first while preserving reserved TP/PP axes.
+    if world_size < dp * tp * pp * ep:
+        dp = max(1, world_size // (tp * pp * ep))
+        if dp * tp * pp * ep > world_size:
+            ep = max(1, world_size // (tp * pp))
+            dp = max(1, world_size // (tp * pp * ep))
 
     topology = build_topology(
-        dp_size=dp, ep_size=ep,
+        dp_size=dp,
+        ep_size=ep,
+        tp_size=tp,
+        pp_size=pp,
         device_type="cuda" if torch.cuda.is_available() else "cpu",
     )
 
