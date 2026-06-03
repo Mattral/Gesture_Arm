@@ -381,4 +381,4 @@ moe-engine/
 
 ## 12. License
 
-MIT. See `LICENSE` (TODO).
+Apache 2.0. See `LICENSE` (TODO).
