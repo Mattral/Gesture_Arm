@@ -69,11 +69,11 @@ checkpoint-stall bug can be isolated to a single line, not a six-team incident.
 │ • all_to_all_dispatch      │   │ • S3Adapter (boto3)          │   │   └─ CPU fallback path       │
 │   on dedicated comm stream │   │                              │   │                              │
 └───────────┬────────────────┘   └─────────────┬────────────────┘   └──────────────┬───────────────┘
-            │                                 │                                   │
-            │   DeviceMesh sub-meshes         │   pinned-host snapshot queue      │  routing tokens
-            │   ("pp","dp","ep","tp")         │                                   │  + gating weights
-            │                                 │                                   │
-            ▼                                 ▼                                   ▼
+            │                                  │                                   │
+            │   DeviceMesh sub-meshes          │   pinned-host snapshot queue      │  routing tokens
+            │   ("pp","dp","ep","tp")          │                                   │  + gating weights
+            │                                  │                                   │
+            ▼                                  ▼                                   ▼
    ┌────────────────────┐         ┌───────────────────────────┐         ┌──────────────────────┐
    │ NCCL / Gloo        │         │ tier-1 NVMe (staging)     │         │ Triton runtime       │
    │ process groups     │         │ tier-2 S3 / MinIO mirror  │         │ (CUDA / ROCm)        │
