@@ -64,3 +64,4 @@ This repository is built around a single, evidence-driven philosophy: make distr
 - If you change a distributed algorithm, also update the corresponding invariant
   or numerics test.
 - Keep the documentation and code aligned: if the behavior changes, update both.
+
