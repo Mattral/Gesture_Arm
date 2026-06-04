@@ -4,7 +4,7 @@
 
 **Real-time multimodal robot control via hand gestures and voice, with LSTM temporal stabilization.**
 
-[![CI](https://github.com/Mattral/gesture_arm/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattral/gesture-arm/actions)
+[![CI](https://github.com/Mattral/gesture_arm/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattral/gesture_arm/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -59,8 +59,8 @@ TTSEngine    ◄─────────────────────�
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/Mattral/gesture-arm.git
-cd gesture-arm
+git clone https://github.com/Mattral/gesture_arm.git
+cd gesture_arm
 pip install -e ".[ml,dev]"      # ml = TensorFlow; dev = pytest, notebooks
 ```
 

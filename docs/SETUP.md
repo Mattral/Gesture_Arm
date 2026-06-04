@@ -190,8 +190,8 @@ ls /dev/cu.usbmodem* /dev/cu.usb*
 ### 4a. Clone the repository
 
 ```bash
-git clone https://github.com/minhtetmyet/gesture-arm.git
-cd gesture-arm
+git clone https://github.com/Mattral/gesture_arm.git
+cd gesture_arm
 ```
 
 ### 4b. Create a virtual environment

@@ -19,8 +19,8 @@ Thank you for your interest in contributing to Gesture Arm. This document covers
 
 ```bash
 # Fork the repo on GitHub, then:
-git clone https://github.com/<your-username>/gesture-arm.git
-cd gesture-arm
+git clone https://github.com/<your-username>/gesture_arm.git
+cd gesture_arm
 
 # Create and activate a virtual environment
 python -m venv .venv

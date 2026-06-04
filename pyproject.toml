@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name = "gesture-arm"
+name = "gesture_arm"
 version = "1.0.0"
 description = "Low-cost multimodal gesture control system with LSTM temporal stabilization"
 readme = "README.md"
@@ -53,14 +53,14 @@ dev = [
 ]
 
 [project.scripts]
-gesture-arm-run      = "gesture_arm.run:main"
-gesture-arm-collect  = "scripts.collect:main"
-gesture-arm-train    = "scripts.train:main"
+gesture_arm-run      = "gesture_arm.run:main"
+gesture_arm-collect  = "scripts.collect:main"
+gesture_arm-train    = "scripts.train:main"
 
 [project.urls]
-Homepage   = "https://github.com/minhtetmyet/gesture-arm"
-Repository = "https://github.com/minhtetmyet/gesture-arm"
-Issues     = "https://github.com/minhtetmyet/gesture-arm/issues"
+Homepage   = "https://github.com/Mattral/gesture_arm"
+Repository = "https://github.com/Mattral/gesture_arm"
+Issues     = "https://github.com/Mattral/gesture_arm/issues"
 
 [tool.pytest.ini_options]
 testpaths   = ["tests"]

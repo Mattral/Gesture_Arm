@@ -520,7 +520,7 @@ The `--no-hardware` mode still tries to open a camera. In a headless Docker cont
 
 **Fix:** For CI, test with `--help` instead:
 ```bash
-docker run --rm gesture-arm-sim python -m gesture_arm.run --no-hardware --help
+docker run --rm gesture_arm-sim python -m gesture_arm.run --no-hardware --help
 ```
 
 For a full headless demo, a video file mock would be needed instead of `cv2.VideoCapture(0)`.
