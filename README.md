@@ -10,7 +10,6 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 <!-- Replace with your actual demo GIF -->
-> 📽️ **[Watch demo on YouTube →](https://www.youtube.com/shorts/6K6AX5FZfPE)**
 <p align="center">
   <img src="demo.gif" alt="Gesture Arm Demo" width="300"/>
 </p>
