@@ -1,0 +1,65 @@
+# gesture_arm configuration
+# Edit this file to tune the system without touching source code.
+
+hardware:
+  port: "COM6"          # Arduino serial port (Windows: COMx, Linux/Mac: /dev/ttyUSBx)
+  baudrate: 57600
+
+  servos:
+    x: { pin: 3,  min_deg: 60,  max_deg: 180, default: 120 }
+    y: { pin: 5,  min_deg: 40,  max_deg: 140, default: 90  }
+    z: { pin: 6,  min_deg: 100, max_deg: 150, default: 120 }
+
+  motors:
+    left:
+      dir1: 7
+      dir2: 8
+      pwm:  9
+    right:
+      dir1: 13
+      dir2: 12
+      pwm:  10
+    max_speed: 1.0
+    turn_speed: 0.5
+    stop_timeout_sec: 2.0   # auto-stop if no gesture detected for this long
+
+vision:
+  camera_index: 0
+  width:  1280
+  height: 720
+  detection_confidence: 0.8
+  max_hands: 2
+
+model:
+  sequence_length: 15     # LSTM sliding-window size (frames)
+  feature_dim: 42         # 21 landmarks × (x, y) normalized
+  output_dim: 3           # [servoX, servoY, servoZ]
+  lstm_units: 64
+  dense_units: 32
+  learning_rate: 0.001
+  epochs: 80
+  batch_size: 16
+  validation_split: 0.15
+  model_path: "models/lstm_gesture_model.h5"
+  training_data_path: "data/training_data.csv"
+
+speech:
+  tts_rate: 160           # words per minute
+  tts_volume: 0.8
+  commands:
+    forward: [1, 0, 1.0, 0, 1, 1.0]
+    go:      [1, 0, 1.0, 0, 1, 1.0]
+    reverse: [0, 1, 1.0, 1, 0, 1.0]
+    back:    [0, 1, 1.0, 1, 0, 1.0]
+    left:    [0, 1, 0.5, 0, 1, 1.0]
+    right:   [1, 0, 1.0, 0, 1, 0.5]
+    stop:    null
+
+evaluation:
+  log_path: "data/metrics_log.csv"
+  stability_window: 100   # frames used to compute rolling variance S
+  latency_window: 100
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
