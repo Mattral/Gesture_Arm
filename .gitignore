@@ -1,0 +1,36 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ML artifacts
+models/*.h5
+models/*.pb
+data/training_data.csv
+data/metrics_log.csv
+!data/.gitkeep
+!models/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Env
+.env
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# macOS
+.DS_Store
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
