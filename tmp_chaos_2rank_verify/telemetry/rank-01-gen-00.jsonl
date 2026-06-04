@@ -1,9 +1,0 @@
-event=boot local_rank=1 scenario=A pid=19017 torch_version=2.12.0+cu130 master_addr=localhost master_port=36659 gloo_ifname=lo elastic_restart_count=0 rank=1 world=2 generation=0 ts=1780172959.7219758
-event=pg_init_attempt attempt=1 init_method=env:// timeout_s=60.0 rank=1 world=2 generation=0 ts=1780172959.8821554
-event=pg_ready attempt=1 rank=1 world=2 generation=0 ts=1780172959.8854432
-event=cold_start rank=1 world=2 generation=0 ts=1780172960.285902
-event=step step=0 loss=0.9799559116363525 tokens=8 cum_tokens=8 sha256=e7683e86c097ca340ca6038e42d24a13096671f606280574db7b9a280755f1f5 rank=1 world=2 generation=0 ts=1780172960.3247128
-event=step step=1 loss=1.021083116531372 tokens=8 cum_tokens=16 sha256=2e243fd11eaaffaf77e271a1ef85d0ce1348d7bd713ce738fd604008462c4e66 rank=1 world=2 generation=0 ts=1780172960.336395
-event=step step=2 loss=0.8927888870239258 tokens=8 cum_tokens=24 sha256=59d2e83c009549c4fce92d98ca3a631972157eef1e63a0df0c2e72b31c75e162 rank=1 world=2 generation=0 ts=1780172960.3490365
-event=step step=3 loss=0.8146669864654541 tokens=8 cum_tokens=32 sha256=bb4d1b572364dbe0ba7073329f1ca67fe77d9bb37b167e73418186221f16de0d rank=1 world=2 generation=0 ts=1780172960.3613381
-event=self_sigkill step=3 local_rank=1 rank=1 world=2 generation=0 ts=1780172960.3627205

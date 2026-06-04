@@ -1,4 +1,0 @@
-{"event": "boot", "local_rank": 1, "scenario": "A", "pid": 28407, "torch_version": "2.12.0+cu130", "master_addr": "localhost", "master_port": "41935", "gloo_ifname": "lo", "elastic_restart_count": "2", "rank": 1, "world": 4, "generation": 2, "ts": 1780174086.9146044}
-{"event": "pg_init_attempt", "attempt": 1, "init_method": "env://", "timeout_s": 120.0, "rank": 1, "world": 4, "generation": 2, "ts": 1780174093.70579}
-{"event": "pg_init_retry", "attempt": 1, "error": "Gloo connectFullMesh failed with [/pytorch/third_party/gloo/gloo/transport/tcp/pair.h:311] Connect timeout [none]", "wait_s": 0.9465358854661606, "base": 0.5, "jitter": 0.44653588546616063, "rank": 1, "world": 4, "generation": 2, "ts": 1780174693.7152224}
-{"event": "pg_init_attempt", "attempt": 2, "init_method": "env://", "timeout_s": 120.0, "rank": 1, "world": 4, "generation": 2, "ts": 1780174694.6630106}

@@ -1,9 +1,0 @@
-event=boot local_rank=0 scenario=A pid=19016 torch_version=2.12.0+cu130 master_addr=localhost master_port=36659 gloo_ifname=lo elastic_restart_count=0 rank=0 world=2 generation=0 ts=1780172959.6789672
-event=pg_init_attempt attempt=1 init_method=env:// timeout_s=60.0 rank=0 world=2 generation=0 ts=1780172959.8424196
-event=pg_ready attempt=1 rank=0 world=2 generation=0 ts=1780172959.8854477
-event=cold_start rank=0 world=2 generation=0 ts=1780172960.3096685
-event=step step=0 loss=1.327000617980957 tokens=8 cum_tokens=8 sha256=e7683e86c097ca340ca6038e42d24a13096671f606280574db7b9a280755f1f5 rank=0 world=2 generation=0 ts=1780172960.3236446
-event=step step=1 loss=1.1931284666061401 tokens=8 cum_tokens=16 sha256=2e243fd11eaaffaf77e271a1ef85d0ce1348d7bd713ce738fd604008462c4e66 rank=0 world=2 generation=0 ts=1780172960.3377256
-event=step step=2 loss=1.0999232530593872 tokens=8 cum_tokens=24 sha256=59d2e83c009549c4fce92d98ca3a631972157eef1e63a0df0c2e72b31c75e162 rank=0 world=2 generation=0 ts=1780172960.348933
-event=step step=3 loss=1.1622951030731201 tokens=8 cum_tokens=32 sha256=bb4d1b572364dbe0ba7073329f1ca67fe77d9bb37b167e73418186221f16de0d rank=0 world=2 generation=0 ts=1780172960.361359
-event=pg_failure step=4 error=[/pytorch/third_party/gloo/gloo/transport/tcp/pair.cc:547] Connection closed by peer [127.0.0.1]:51636 rank=0 world=2 generation=0 ts=1780172960.3956895
