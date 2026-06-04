@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-type-check:
+    name: Lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: |
+          pip install ruff black mypy
+          pip install pyyaml numpy
+
+      - name: ruff (lint)
+        run: ruff check gesture_arm/ scripts/ tests/
+
+      - name: black (format check)
+        run: black --check gesture_arm/ scripts/ tests/
+
+      - name: mypy (type check)
+        run: mypy gesture_arm/ --ignore-missing-imports
+
+  test:
+    name: Unit tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install core dependencies (no hardware, no TF)
+        run: |
+          pip install numpy pyyaml pytest pytest-cov
+          # Mock heavy deps so tests can import the package without hardware
+          pip install opencv-python-headless
+
+      - name: Run tests (hardware-independent only)
+        run: |
+          pytest tests/test_core.py -v \
+            --cov=gesture_arm \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -k "not Hardware and not TF"
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        if: matrix.python-version == '3.11'
+        with:
+          file: coverage.xml
+
+  docker-build:
+    name: Docker build (simulation mode)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.sim -t gesture-arm-sim .
+
+      - name: Smoke test (no-hardware mode)
+        run: |
+          docker run --rm gesture-arm-sim \
+            python -m gesture_arm.run --no-hardware --help
