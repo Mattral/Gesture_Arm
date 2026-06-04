@@ -1,14 +1,19 @@
+
+
 # Gesture Arm
 
 **Real-time multimodal robot control via hand gestures and voice, with LSTM temporal stabilization.**
 
-[![CI](https://github.com/minhtetmyet/gesture-arm/actions/workflows/ci.yml/badge.svg)](https://github.com/minhtetmyet/gesture-arm/actions)
+[![CI](https://github.com/Mattral/gesture-arm/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattral/gesture-arm/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 <!-- Replace with your actual demo GIF -->
 > 📽️ **[Watch demo on YouTube →](https://www.youtube.com/shorts/6K6AX5FZfPE)**
+<p align="center">
+  <img src="demo.gif" alt="Gesture Arm Demo" width="300"/>
+</p>
 
 ---
 
@@ -55,7 +60,7 @@ TTSEngine    ◄─────────────────────�
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/minhtetmyet/gesture-arm.git
+git clone https://github.com/Mattral/gesture-arm.git
 cd gesture-arm
 pip install -e ".[ml,dev]"      # ml = TensorFlow; dev = pytest, notebooks
 ```
@@ -200,7 +205,7 @@ Tests run without hardware or TensorFlow — safe for CI.
 If you use this work, please cite:
 
 ```bibtex
-@article{minhtetmyet2025gesture,
+@article{Mattral2025gesture,
   title   = {A Low-Cost Multimodal Gesture Control System with
              LSTM-Based Temporal Stabilization for Real-Time Robotics},
   author  = {Min Htet Myet},

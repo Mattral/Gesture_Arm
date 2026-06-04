@@ -58,9 +58,9 @@ gesture-arm-collect  = "scripts.collect:main"
 gesture-arm-train    = "scripts.train:main"
 
 [project.urls]
-Homepage   = "https://github.com/minhtetmyet/gesture-arm"
-Repository = "https://github.com/minhtetmyet/gesture-arm"
-Issues     = "https://github.com/minhtetmyet/gesture-arm/issues"
+Homepage   = "https://github.com/Mattral/gesture-arm"
+Repository = "https://github.com/Mattral/gesture-arm"
+Issues     = "https://github.com/Mattral/gesture-arm/issues"
 
 [tool.pytest.ini_options]
 testpaths   = ["tests"]
