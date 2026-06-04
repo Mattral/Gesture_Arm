@@ -35,16 +35,16 @@ A parallel speech thread continuously listens for voice commands and dispatches 
 ┌─────────────────────────────────────────────────────────────────┐
 │                        HOST COMPUTER                            │
 │                                                                 │
-│  Webcam ──► HandTracker ──► LSTMStabilizer ──► ArmController    │
+│  Webcam ──► HandTracker ──► LSTMStabilizer ──► ArmController   │
 │                                     │                           │
 │                              BaselineMapper                     │
-│                             (warm-up / fallback)                │
+│                             (warm-up / fallback)               │
 │                                                                 │
 │  Microphone ──► ASRListener ──────────────────► BaseController  │
 │                     │                                           │
 │                  TTSEngine ◄── command confirmation             │
 │                                                                 │
-│  MetricsLogger ◄──────────────── every servo write              │
+│  MetricsLogger ◄──────────────── every servo write             │
 └───────────────────────────────────┬─────────────────────────────┘
                                     │ USB Serial (57600 baud)
                               ┌─────▼──────┐
@@ -338,34 +338,31 @@ Servo.write(120)  →  1.5ms PWM pulse on pin 3
 
 ### Latency budget
 
-| Stage                     | Typical time     |
-|----------------------------|------------------|
-| Frame capture (USB webcam) | ~5 ms            |
-| MediaPipe hand detection   | ~10–15 ms        |
-| LSTM inference (CPU)       | ~5 ms            |
-| Serial write (pyFirmata)   | ~1–2 ms          |
-| Arduino processing         | ~1 ms            |
-| Servo mechanical response  | ~100–200 ms      |
-| **Total frame‑to‑motion**  | **~120–230 ms**  |
+| Stage | Typical time |
+|---|---|
+| Frame capture (USB webcam) | ~5 ms |
+| MediaPipe hand detection | ~10–15 ms |
+| LSTM inference (CPU) | ~5 ms |
+| Serial write (pyFirmata) | ~1–2 ms |
+| Arduino processing | ~1 ms |
+| Servo mechanical response | ~100–200 ms |
+| **Total frame-to-motion** | **~120–230 ms** |
 
-The dominant latency is the **servo mechanical response**, not software.  
-The software pipeline (L) measured in the paper is the time from frame capture to `write()` call, which is ~40–55 ms.
-
----
+The dominant latency is servo mechanical response, not software. The software pipeline (L) measured in the paper is the time from frame capture to `write()` call, which is ~40–55 ms.
 
 ### Pin assignment
 
-| Pin  | Mode   | Connected to             |
-|------|--------|--------------------------|
-| D3   | Servo  | Arm servo X (horizontal) |
-| D5   | Servo  | Arm servo Y (vertical)   |
-| D6   | Servo  | Arm servo Z (grip)       |
-| D7   | Output | L298N left IN1           |
-| D8   | Output | L298N left IN2           |
-| D9   | PWM    | L298N left ENA           |
-| D10  | PWM    | L298N right ENB          |
-| D12  | Output | L298N right IN4          |
-| D13  | Output | L298N right IN3          |
+| Pin | Mode | Connected to |
+|---|---|---|
+| D3 | Servo | Arm servo X (horizontal) |
+| D5 | Servo | Arm servo Y (vertical) |
+| D6 | Servo | Arm servo Z (grip) |
+| D7 | Output | L298N left IN1 |
+| D8 | Output | L298N left IN2 |
+| D9 | PWM | L298N left ENA |
+| D10 | PWM | L298N right ENB |
+| D12 | Output | L298N right IN4 |
+| D13 | Output | L298N right IN3 |
 
 ---
 
