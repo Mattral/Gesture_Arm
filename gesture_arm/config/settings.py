@@ -94,12 +94,22 @@ class EvaluationConfig:
 
 
 @dataclass
+class IKConfig:
+    enabled: bool
+    link1_cm: float
+    link2_cm: float
+    servo_x_neutral_deg: float
+    servo_y_zero_deg: float
+
+
+@dataclass
 class AppConfig:
     hardware: HardwareConfig
     vision: VisionConfig
     model: ModelConfig
     speech: SpeechConfig
     evaluation: EvaluationConfig
+    kinematics: IKConfig
 
 
 # ── Loader ─────────────────────────────────────────────────────────────────────
@@ -149,6 +159,7 @@ def load_config(path: str | Path = _DEFAULT_CFG) -> AppConfig:
     model  = ModelConfig(**raw["model"])
     speech = SpeechConfig(**raw["speech"])
     evaluation = EvaluationConfig(**raw["evaluation"])
+    kinematics = IKConfig(**raw["kinematics"])
 
     return AppConfig(
         hardware=hardware,
@@ -156,4 +167,5 @@ def load_config(path: str | Path = _DEFAULT_CFG) -> AppConfig:
         model=model,
         speech=speech,
         evaluation=evaluation,
+        kinematics=kinematics,
     )
