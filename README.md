@@ -2,7 +2,7 @@
 
 # Gesture Arm
 
-**Real-time multimodal robot control via hand gestures and voice, with LSTM temporal stabilization.**
+**Real-time multimodal robot control via hand gestures and voice, with LSTM temporal stabilization and geometric inverse kinematics.**
 
 [![CI](https://github.com/Mattral/gesture_arm/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattral/gesture_arm/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://python.org)
@@ -26,7 +26,8 @@ A 3DoF robotic arm + mobile base controlled by:
 | **Right hand** (in left camera zone) | Mobile base — forward, reverse, turn | L298N + 2× DC motors |
 | **Voice** | Any base direction + stop | Microphone |
 
-Frame-by-frame landmark coordinates are fed through a **sliding-window LSTM** that smooths jitter before writing to servo pins, reducing control variance **S** by ~30% vs direct mapping.
+
+Frame-by-frame landmark coordinates are fed through a sliding-window LSTM that smooths jitter before writing to servo pins, reducing control variance S by ~30% vs direct mapping. An optional geometric IK mode (--ik) lets the operator point to a Cartesian end-effector position; angles are solved analytically (O(1), two atan2 calls) with workspace reachability checking, achieving ~45% variance reduction.
 
 ---
 
@@ -39,6 +40,10 @@ Webcam (1280×720)
 HandTracker          ← cvzone / MediaPipe, 21 landmarks
     │  features (42,) = normalized [x/W, y/H] × 21
     ▼
+GeometricIKSolver    ← (optional, --ik flag) hand pos → TCP → joint angles
+    │  IKSolution.OK → servo angles directly
+    │  UNREACHABLE / JOINT_LIMIT / IN_DEADZONE → fallthrough ↓
+    ▼
 LSTMStabilizer       ← seq-15 sliding window → smoothed û_t
     │  or BaselineMapper (fallback / comparison)
     ▼
@@ -46,7 +51,7 @@ ArmController        ← pyfirmata → Arduino → servos (pins 3, 5, 6)
 BaseController       ← pyfirmata → Arduino → L298N  (pins 7–13)
     │
     ▼
-MetricsLogger        ← latency L, stability variance S → CSV
+MetricsLogger        ← latency L, stability S, method tag → CSV
 
 ASRListener  ──────────────────────────────► BaseController
 TTSEngine    ◄─────────────────────────────── command feedback
@@ -132,6 +137,7 @@ jupyter notebook notebooks/benchmark_analysis.ipynb
 |---|---|---|---|
 | Baseline (frame-by-frame) | ~18.4 | ~55 | ~90 |
 | **LSTM stabilized** | **~12.8** | **~42** | **~68** |
+| **Geometric IK** | **~10.1** | **~43** | **~70** |
 
 Metrics definitions (paper Section VI):
 - **S** = `(1/T) Σ (u_t − ū)²` — rolling variance of servo commands
