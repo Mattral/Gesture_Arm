@@ -60,6 +60,14 @@ evaluation:
   stability_window: 100   # frames used to compute rolling variance S
   latency_window: 100
 
+kinematics:
+  enabled: false          # set true to activate IK mode for left-hand arm control
+  link1_cm: 10.0          # upper-arm link length (shoulder → elbow mount), cm
+  link2_cm: 8.0           # forearm link length (elbow mount → TCP), cm
+  # Servo-space mappings (must match hardware.servos bounds above)
+  servo_x_neutral_deg: 120.0   # servo X angle when arm points straight forward
+  servo_y_zero_deg: 40.0       # servo Y angle when arm is fully horizontal (θ₂=0)
+
 logging:
   level: "INFO"
   format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
