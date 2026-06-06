@@ -445,3 +445,107 @@ Servo angles are bounded. A sigmoid output maps to [0, 1], which is then linearl
 ### Why not end-to-end learning (raw pixels → angles)?
 
 The system separates hand tracking (MediaPipe) from motion smoothing (LSTM) deliberately. MediaPipe is a mature, optimized model that generalizes across users and lighting conditions. Training an end-to-end model from pixels would require orders of magnitude more data and a GPU. The modular design lets each component be replaced independently.
+
+---
+
+## 11. Inverse Kinematics Module  (gesture_arm.kinematics)
+
+### Motivation
+
+The original system mapped hand position directly to servo angles using linear interpolation — an *angle-space* control law. When the operator moves their hand to the right, servo X increases proportionally. This is intuitive for experts but cognitively demanding: the operator must think in joint-angle space rather than Cartesian task space.
+
+The IK module adds a *task-space* control mode in which the operator's hand position is interpreted as a desired **end-effector (TCP) location** in 3D space. The IK solver then computes the joint angles required to reach that point. This is the standard paradigm in industrial robot teaching-pendant interfaces.
+
+### Arm model
+
+The 3-DoF arm uses a simplified 2-DoF positional model:
+
+```
+Joint 1 — Base rotation (θ₁, servo X)
+          Rotates the arm around the vertical axis.
+          Servo range: [60°, 180°], neutral = 120° (arm forward).
+
+Joint 2 — Shoulder elevation (θ₂, servo Y)
+          Rotates the arm in the vertical plane.
+          Servo range: [40°, 140°], zero = 40° (arm horizontal).
+
+Joint 3 — Gripper (θ₃, servo Z)
+          Opens/closes the end-effector.
+          NOT a positional joint — does not contribute to TCP position.
+          Controlled exclusively by pinch gesture, passed through IK unchanged.
+```
+
+Because joint 3 is a gripper, TCP position is fully determined by (θ₁, θ₂): a 2-DoF system solvable analytically.
+
+### Coordinate frame
+
+```
+Origin: servo-X pivot (arm base centre)
+  +X : arm pointing forward at θ₁ = 0 (servo X neutral)
+  +Y : arm pointing left   at θ₁ = π/2
+  +Z : up
+All spatial quantities in centimetres.
+```
+
+### IK equations
+
+```
+r_desired  = √(px² + py²)             horizontal reach
+θ₁         = atan2(py, px)            base rotation angle
+L          = √(r_desired² + pz²)      straight-line shoulder→TCP distance
+θ₂         = atan2(pz, r_desired)     elevation angle
+```
+
+Reachability:
+- `L > l1 + l2`    → `IKSolution.UNREACHABLE`
+- `L < |l1 - l2|`  → `IKSolution.IN_DEADZONE`
+- Joint-limit check after conversion to servo space
+
+### Integration with existing pipeline
+
+IK is an **optional upstream layer** in the arm-control cascade:
+
+```
+Left hand detected
+        │
+        ▼
+IK enabled? ──yes──► hand_position_to_target() ──► solve(px, py, pz)
+        │                                               │
+        │                                    reachable? ─no─► fallthrough
+        │                                               │
+        │◄──────────────────────────────────────────────┘ yes
+        │
+        ▼
+LSTMStabilizer (if trained model exists)
+        │
+        ▼
+BaselineMapper (fallback / warm-up)
+        │
+        ▼
+ArmController.write(angles)
+```
+
+If IK is disabled (`kinematics.enabled: false` in config, the default), the pipeline is identical to before. The IK layer adds zero overhead when disabled.
+
+### Activating IK mode
+
+```bash
+# Via CLI flag:
+python -m gesture_arm.run --ik
+
+# Via config (persistent):
+# gesture_arm/config/default.yaml → kinematics: enabled: true
+```
+
+### Tuning link lengths
+
+Measure your physical arm links and update `config/default.yaml`:
+
+```yaml
+kinematics:
+  enabled: true
+  link1_cm: 10.0    # shoulder pivot → end-effector mount
+  link2_cm: 8.0     # end-effector mount → TCP (fingertip)
+```
+
+Incorrect link lengths cause the IK to command the arm to the wrong position. Use `GeometricIKSolver.forward(servo_x, servo_y)` to verify that FK output matches physical observation.

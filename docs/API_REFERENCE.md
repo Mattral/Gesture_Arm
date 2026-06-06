@@ -516,3 +516,160 @@ print(cfg.hardware.motors.max_speed)         # 1.0
 print(cfg.model.sequence_length)             # 15
 print(cfg.speech.commands["forward"])        # [1, 0, 1.0, 0, 1, 1.0]
 ```
+
+---
+
+## `gesture_arm.kinematics.ik_solver`
+
+Geometric inverse kinematics for the 3-DoF arm.
+
+---
+
+### `IKSolution`
+
+```python
+class IKSolution(Enum):
+    OK           # Valid solution within all joint limits
+    UNREACHABLE  # Target beyond maximum reach (L > l1+l2)
+    IN_DEADZONE  # Target inside minimum reach (L < |l1-l2|)
+    JOINT_LIMIT  # Geometrically valid but violates servo bounds
+```
+
+---
+
+### `IKResult`
+
+```python
+@dataclass(frozen=True)
+class IKResult:
+    solution:   IKSolution           # Outcome enum
+    angles:     Optional[np.ndarray] # shape (3,): [θ₁_servo°, θ₂_servo°, θ₃_servo°]
+                                     # None unless solution == IKSolution.OK
+    theta1_rad: float                # Raw base rotation (radians)
+    theta2_rad: float                # Raw elevation angle (radians)
+    reach_cm:   float                # Computed L (straight-line distance)
+    reachable:  bool                 # True iff solution == OK
+    message:    str                  # Human-readable status string
+```
+
+Immutable result of one IK computation. Always check `result.reachable`
+before accessing `result.angles`.
+
+---
+
+### `GeometricIKSolver`
+
+```python
+class GeometricIKSolver:
+    def __init__(
+        self,
+        link1_cm: float = 10.0,
+        link2_cm: float = 8.0,
+        servo_x_bounds: Tuple[float, float] = (60.0, 180.0),
+        servo_y_bounds: Tuple[float, float] = (40.0, 140.0),
+        servo_x_neutral_deg: float = 120.0,
+        servo_y_zero_deg: float = 40.0,
+    ) -> None
+```
+
+Analytical geometric IK solver. The arm is modelled as a single rigid link
+of total length `l1+l2` in the elevation plane set by the base rotation angle.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `link1_cm` | float | 10.0 | Upper-arm link length (shoulder → mount), cm |
+| `link2_cm` | float | 8.0 | Forearm length (mount → TCP), cm |
+| `servo_x_bounds` | tuple | (60, 180) | Servo X degree limits |
+| `servo_y_bounds` | tuple | (40, 140) | Servo Y degree limits |
+| `servo_x_neutral_deg` | float | 120.0 | Servo X angle when arm points forward |
+| `servo_y_zero_deg` | float | 40.0 | Servo Y angle when arm is horizontal |
+
+Raises `ValueError` if either link length is ≤ 0.
+
+---
+
+#### `solve(px, py, pz, gripper_deg) -> IKResult`
+
+```python
+def solve(
+    self,
+    px: float,
+    py: float,
+    pz: float,
+    gripper_deg: float = 120.0,
+) -> IKResult
+```
+
+Compute joint angles for the desired end-effector position.
+
+| Parameter | Description |
+|---|---|
+| `px` | Desired TCP x-position in cm (+X = forward) |
+| `py` | Desired TCP y-position in cm (+Y = left) |
+| `pz` | Desired TCP z-position in cm (+Z = up) |
+| `gripper_deg` | Servo Z passthrough angle (IK does not modify grip) |
+
+Returns `IKResult`. Check `.reachable` before using `.angles`.
+
+```python
+solver = GeometricIKSolver(link1_cm=10, link2_cm=8)
+result = solver.solve(px=12.0, py=0.0, pz=5.0)
+if result.reachable:
+    arm.write(result.angles)
+else:
+    print(result.message)   # e.g. "Target (25.0, 0.0, 0.0) cm is unreachable"
+```
+
+---
+
+#### `forward(servo_x_deg, servo_y_deg) -> Tuple[float, float, float]`
+
+Forward kinematics: given servo angles, return TCP position in cm.
+
+```python
+px, py, pz = solver.forward(servo_x_deg=120.0, servo_y_deg=90.0)
+```
+
+---
+
+#### `fk_check(px, py, pz, tolerance_cm) -> bool`
+
+Convenience round-trip consistency check. Returns True if the IK result's
+FK output is within `tolerance_cm` of the original target.
+
+---
+
+#### `workspace_bounds() -> dict`
+
+Returns the Cartesian workspace envelope from joint limits and link lengths.
+
+```python
+wb = solver.workspace_bounds()
+# Keys: max_reach_cm, min_reach_cm, x_range_cm, z_range_cm,
+#       theta1_range_rad, theta2_range_rad
+print(f"Max reach: {wb['max_reach_cm']} cm")
+```
+
+---
+
+#### `hand_position_to_target(norm_x, norm_y, pinch_distance_px) -> Tuple[float, float, float]`
+
+Maps a normalized hand position from `HandState.features` to a desired
+TCP position in the arm's workspace.
+
+| Parameter | Description |
+|---|---|
+| `norm_x` | Normalized x ∈ [0,1] from `HandState.features[18]` |
+| `norm_y` | Normalized y ∈ [0,1] from `HandState.features[19]` |
+| `pinch_distance_px` | `HandState.pinch_distance` (pixels) |
+
+Returns `(px, py, pz)` in centimetres, ready to pass to `solve()`.
+
+```python
+norm_x = float(hand_state.features[18])
+norm_y = float(hand_state.features[19])
+px, py, pz = solver.hand_position_to_target(norm_x, norm_y, hand_state.pinch_distance)
+result = solver.solve(px, py, pz, gripper_deg=current_grip)
+```

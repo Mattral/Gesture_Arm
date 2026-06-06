@@ -1,6 +1,6 @@
-# gesture_arm — simulation / demo image (no Arduino required)
-# Build:  docker build -f docker/Dockerfile.sim -t gesture_arm-sim .
-# Run:    docker run --rm -e GESTURE_ARM_PORT=COM6 gesture_arm-sim python -m gesture_arm.run --no-hardware
+# gesture-arm — simulation / demo image (no Arduino required)
+# Build:  docker build -f docker/Dockerfile.sim -t gesture-arm-sim .
+# Run:    docker run --rm -e GESTURE_ARM_PORT=COM6 gesture-arm-sim python -m gesture_arm.run --no-hardware
 
 FROM python:3.11-slim
 

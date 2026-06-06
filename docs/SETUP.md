@@ -190,8 +190,8 @@ ls /dev/cu.usbmodem* /dev/cu.usb*
 ### 4a. Clone the repository
 
 ```bash
-git clone https://github.com/Mattral/gesture_arm.git
-cd gesture_arm
+git clone https://github.com/minhtetmyet/gesture-arm.git
+cd gesture-arm
 ```
 
 ### 4b. Create a virtual environment
@@ -506,3 +506,72 @@ You need to collect data and train before running the full LSTM mode. The system
 python scripts/collect.py
 python scripts/train.py
 ```
+
+---
+
+## 9. IK mode setup
+
+IK mode maps your hand position to a Cartesian end-effector target instead
+of directly to servo angles. This requires two additional steps.
+
+### 9a. Measure your link lengths
+
+With the arm powered off, measure physically with a ruler:
+
+```
+l1 = distance from the servo-Y pivot (shoulder) to the end-effector mount point
+l2 = distance from the mount point to the TCP (fingertip of the gripper)
+```
+
+Typical values for a standard 3D-printed SG90 arm: l1 ≈ 10 cm, l2 ≈ 8 cm.
+
+### 9b. Update the config
+
+```yaml
+# gesture_arm/config/default.yaml
+kinematics:
+  enabled: false          # keep false; use --ik flag at runtime instead
+  link1_cm: 10.0          # ← your measured l1
+  link2_cm: 8.0           # ← your measured l2
+  servo_x_neutral_deg: 120.0   # servo X angle when arm faces forward
+  servo_y_zero_deg: 40.0       # servo Y angle when arm is horizontal
+```
+
+### 9c. Run in IK mode
+
+```bash
+python -m gesture_arm.run --ik
+```
+
+Or enable permanently in the config (`kinematics.enabled: true`) and run normally.
+
+### 9d. Verify workspace
+
+Check that the arm reaches the expected positions. If the arm overshoots or
+undershoots, your link lengths may be slightly off. Run the FK check in a
+Python console:
+
+```python
+from gesture_arm.kinematics import GeometricIKSolver
+solver = GeometricIKSolver(link1_cm=10.0, link2_cm=8.0)
+
+# Check: what TCP position does servo X=120, Y=90 produce?
+px, py, pz = solver.forward(120, 90)
+print(f"TCP at: ({px:.1f}, {py:.1f}, {pz:.1f}) cm")
+
+# Check: can the arm reach (10, 0, 5)?
+r = solver.solve(10, 0, 5)
+print(r.message)
+print(f"Servo X={r.angles[0]:.1f}°  Y={r.angles[1]:.1f}°")
+```
+
+Adjust `link1_cm` and `link2_cm` until `forward()` output matches what
+you observe physically.
+
+### 9e. IK fallback behaviour
+
+If IK is enabled but the target is outside the workspace, the system
+falls through to LSTM/baseline automatically. The HUD method badge
+shows the current path: `[ik]`, `[lstm]`, or `[baseline]`.
+The metrics CSV method column records which path produced each frame's
+servo command, enabling comparison in the benchmark notebook.

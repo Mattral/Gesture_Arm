@@ -42,7 +42,8 @@ Five principles guided every decision in this codebase.
 ```
 gesture_arm/
 ├── vision/        ← perception
-├── models/        ← intelligence
+├── models/        ← intelligence (LSTM, baseline)
+├── kinematics/    ← geometry (IK solver)
 ├── hardware/      ← actuation
 ├── speech/        ← multimodal I/O
 ├── evaluation/    ← observability
@@ -50,7 +51,7 @@ gesture_arm/
 └── run.py         ← composition root
 ```
 
-This mirrors the **hexagonal architecture** (ports and adapters) pattern. The core logic (`models/`) has no dependencies on any I/O system. It receives normalized numpy arrays and returns angle arrays. It has no idea whether those arrays came from a webcam or a unit test.
+This mirrors the **hexagonal architecture** (ports and adapters) pattern. The core logic (`models/`, `kinematics/`) has no dependencies on any I/O system. Both receive numpy arrays and return angle arrays. Neither knows whether those arrays came from a webcam, a unit test, or a ROS2 topic.
 
 The `run.py` module is the only place where all the pieces are wired together. This means you can swap out any subsystem (e.g. replace pyFirmata with ROS2 publishers) by only changing the hardware module and the composition in `run.py`.
 
@@ -261,7 +262,11 @@ The trade-off: the LSTM cannot produce outputs that the baseline mapper couldn't
 
 ### ROS2 integration
 
-ROS2 is the standard for industrial robotics. A `gesture_arm` ROS2 node that publishes `std_msgs/Float32MultiArray` on a `/servo_angles` topic would make this system composable with any ROS2 robot stack. This was scoped out of the current version to keep the dependency footprint manageable, but the architecture fully supports it — `ArmController` would simply subscribe to the topic instead of being called directly. The roadmap item is documented.
+ROS2 is the standard for industrial robotics. A `gesture_arm` ROS2 node that publishes `std_msgs/Float32MultiArray` on `/servo_angles` and `geometry_msgs/Twist` on `/cmd_vel` would make this system composable with any ROS2 robot stack. This was scoped out of the current version to keep the dependency footprint manageable, but the architecture fully supports it — `ArmController` would simply be replaced by a ROS2 publisher in `run.py`. Roadmap item documented in `docs/RESEARCH.md`.
+
+### Two-link elbow IK
+
+The current `GeometricIKSolver` uses a simplified single-link model (both arm segments share the same elevation angle θ₂). This is exact for the current arm, which has no independent elbow joint. Extending to the full two-link planar IK (law of cosines, elbow-up/down selection) is a documented roadmap item for when the arm is upgraded to include an independent elbow servo. Scoped out of v1.1 because the hardware constraint makes it unnecessary.
 
 ### Offline speech recognition
 
@@ -295,10 +300,11 @@ The system is open-loop: it writes an angle and assumes the servo reached it. If
 
 | Item | Priority | Complexity | Notes |
 |---|---|---|---|
-| Transformer-based stabilizer | High | Medium | Replace LSTM with temporal attention; compare S and L |
-| Kalman / EMA baseline comparison | High | Low | Add to benchmark notebook |
+| Two-link elbow IK | High | Low | Law of cosines; elbow-up/down config selection |
+| Kalman filter stabilizer | High | Low | Compare S vs LSTM; parameter-free baseline |
+| Transformer-based stabilizer | High | Medium | Replace LSTM with TFT; compare S and L |
 | Offline ASR (Vosk) | Medium | Low | Drop-in replacement for `ASRListener._run()` |
-| ROS2 publisher node | Medium | Medium | `hardware/ros2_bridge.py` publishing to `/servo_angles` |
-| Few-shot user adaptation | Low | High | Meta-learning layer for 10s re-calibration |
+| ROS2 publisher node | Medium | Medium | `hardware/ros2_bridge.py` → `/servo_angles`, `/cmd_vel` |
+| Task accuracy metric | Medium | Medium | Target-reaching experiment; 5mm radius criterion |
+| Few-shot user adaptation | Low | High | Fine-tune Dense(3) on 10s of new-user data |
 | Web dashboard (FastAPI + WebSocket) | Low | Medium | Live metrics stream in browser |
-| Docker Compose with mock hardware | Low | Low | Full integration test without physical robot |

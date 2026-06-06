@@ -3,20 +3,26 @@ gesture_arm.run
 ~~~~~~~~~~~~~~~~
 Main real-time control loop.
 
-Wires all subsystems together:
-  - HandTracker      → per-frame landmark extraction
-  - LSTMStabilizer   → temporal smoothing of servo commands
-  - BaselineMapper   → fallback / warm-up mapping
-  - ArmController    → 3DoF servo arm
-  - BaseController   → L298N mobile base
-  - ASRListener      → speech command thread
-  - TTSEngine        → voice feedback thread
-  - MetricsLogger    → latency + stability CSV
+Wires all subsystems together via the three-stage arm-control cascade:
 
-Run with:
-    python -m gesture_arm.run
-    python -m gesture_arm.run --config gesture_arm/config/default.yaml
-    python -m gesture_arm.run --no-hardware   (demo mode, no Arduino needed)
+  1. GeometricIKSolver  → Cartesian IK (optional, --ik flag)
+  2. LSTMStabilizer     → temporal smoothing of servo commands
+  3. BaselineMapper     → direct per-frame mapping (fallback / warm-up)
+
+Other subsystems:
+  - HandTracker      → per-frame landmark extraction + feature normalization
+  - ArmController    → 3DoF servo arm (pins D3, D5, D6)
+  - BaseController   → L298N mobile base (pins D7–D13)
+  - ASRListener      → continuous speech recognition daemon thread
+  - TTSEngine        → text-to-speech feedback daemon thread
+  - MetricsLogger    → latency L + stability S → data/metrics_log.csv
+
+Run modes:
+    python -m gesture_arm.run                        # LSTM mode (default)
+    python -m gesture_arm.run --ik                   # IK → LSTM → baseline cascade
+    python -m gesture_arm.run --no-hardware          # demo / CI, no Arduino
+    python -m gesture_arm.run --config my.yaml       # custom config file
+    python -m gesture_arm.run --ik --no-hardware     # IK demo without hardware
 """
 
 from __future__ import annotations
@@ -32,9 +38,12 @@ import numpy as np
 
 from .config.settings import AppConfig, load_config
 from .evaluation.metrics import MetricsLogger
+from .kinematics.ik_solver import GeometricIKSolver, IKSolution
 from .models.stabilizer import BaselineMapper, LSTMStabilizer, TF_AVAILABLE, load_or_build
 from .speech.multimodal import ASRListener, TTSEngine
-from .vision.tracker import HandTracker
+
+# HandTracker imported lazily inside run() to avoid importing cvzone at module
+# load time, which would break CI environments without the hardware stack.
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +95,8 @@ def _draw_hud(
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
 
         # Method badge
-        color = (80, 200, 255) if method == "lstm" else (160, 160, 160)
+        color = (80, 200, 255) if method == "lstm" else \
+                (255, 180,  60) if method == "ik"   else (160, 160, 160)
         cv2.putText(frame, f"[{method}]",
                     (half_w + 20, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
@@ -94,6 +104,11 @@ def _draw_hud(
     if S is not None:
         cv2.putText(frame, f"S={S:.2f}  L={L:.1f}ms" if L else f"S={S:.2f}",
                     (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1, cv2.LINE_AA)
+
+    # IK mode indicator (top centre)
+    if method == "ik":
+        cv2.putText(frame, "IK MODE",
+                    (w // 2 - 42, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 180, 60), 2, cv2.LINE_AA)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -108,6 +123,9 @@ def run(cfg: AppConfig, no_hardware: bool = False) -> None:
         cfg:          Loaded AppConfig (from config/default.yaml).
         no_hardware:  If True, skip Arduino connection (demo / CI mode).
     """
+    # Lazy import — cvzone only needed at runtime
+    from .vision.tracker import HandTracker
+
     # ── Hardware ───────────────────────────────────────────────────────────────
     arm = None
     base = None
@@ -143,6 +161,30 @@ def run(cfg: AppConfig, no_hardware: bool = False) -> None:
         stabilizer = LSTMStabilizer(model, servo_bounds, cfg.model.sequence_length)
 
     baseline = BaselineMapper(servo_bounds, cfg.vision.width, cfg.vision.height)
+
+    # ── IK solver (optional Cartesian mode) ───────────────────────────────────
+    ik_solver: Optional[GeometricIKSolver] = None
+    if cfg.kinematics.enabled:
+        ik_cfg = cfg.kinematics
+        ik_solver = GeometricIKSolver(
+            link1_cm=ik_cfg.link1_cm,
+            link2_cm=ik_cfg.link2_cm,
+            servo_x_bounds=(
+                cfg.hardware.servos["x"].min_deg,
+                cfg.hardware.servos["x"].max_deg,
+            ),
+            servo_y_bounds=(
+                cfg.hardware.servos["y"].min_deg,
+                cfg.hardware.servos["y"].max_deg,
+            ),
+            servo_x_neutral_deg=ik_cfg.servo_x_neutral_deg,
+            servo_y_zero_deg=ik_cfg.servo_y_zero_deg,
+        )
+        wb = ik_solver.workspace_bounds()
+        logger.info(
+            "IK mode enabled — workspace reach [%.1f, %.1f] cm",
+            wb["min_reach_cm"], wb["max_reach_cm"],
+        )
 
     # ── TTS + ASR ──────────────────────────────────────────────────────────────
     tts = TTSEngine(rate=cfg.speech.tts_rate, volume=cfg.speech.tts_volume)
@@ -231,15 +273,52 @@ def run(cfg: AppConfig, no_hardware: bool = False) -> None:
                 if base:
                     base.stop()
 
-            # ── LEFT HAND → 3DoF arm (LSTM) ──────────────────────────────────
+            # ── LEFT HAND → 3DoF arm (IK → LSTM → baseline cascade) ─────────
             method = "no hand"
             if output.left is not None:
                 lh = output.left
 
-                if stabilizer is not None:
+                if ik_solver is not None:
+                    # ── IK path: hand position → desired TCP → joint angles ──
+                    # Extract normalized palm position from the feature vector.
+                    # Features layout: [x0/W, y0/H, x1/W, y1/H, ..., x20/W, y20/H]
+                    # Landmark 9 (palm centre) is at indices 18, 19.
+                    norm_x = float(lh.features[18])   # x9 / W
+                    norm_y = float(lh.features[19])   # y9 / H
+
+                    px, py, pz = ik_solver.hand_position_to_target(
+                        norm_x=norm_x,
+                        norm_y=norm_y,
+                        pinch_distance_px=lh.pinch_distance,
+                    )
+                    ik_result = ik_solver.solve(
+                        px=px, py=py, pz=pz,
+                        gripper_deg=float(current_angles[2]),  # preserve current grip
+                    )
+
+                    if ik_result.reachable:
+                        angles = ik_result.angles
+                        method = "ik"
+                    else:
+                        # Target outside workspace — fall through to LSTM / baseline
+                        logger.debug("IK fallback: %s", ik_result.message)
+                        angles = None
+                        method = "ik_fallback"
+
+                    if angles is None:
+                        # IK failed or disabled — use LSTM / baseline
+                        if stabilizer is not None:
+                            angles, method = stabilizer.update(lh.features)
+                            if angles is None:
+                                angles = baseline.map(lh.landmarks)
+                                method = "baseline (warming)"
+                        else:
+                            angles = baseline.map(lh.landmarks)
+                            method = "baseline"
+
+                elif stabilizer is not None:
                     angles, method = stabilizer.update(lh.features)
                     if angles is None:
-                        # Buffer still filling — use baseline
                         angles = baseline.map(lh.landmarks)
                         method = "baseline (warming)"
                 else:
@@ -292,6 +371,8 @@ def main() -> None:
     parser.add_argument("--config", default=None, help="Path to YAML config file")
     parser.add_argument("--no-hardware", action="store_true",
                         help="Run without Arduino (demo / CI mode)")
+    parser.add_argument("--ik", action="store_true",
+                        help="Enable IK Cartesian mode (overrides config kinematics.enabled)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -300,6 +381,12 @@ def main() -> None:
     )
 
     cfg = load_config(args.config) if args.config else load_config()
+
+    # CLI flag overrides config file
+    if args.ik:
+        from dataclasses import replace
+        cfg = replace(cfg, kinematics=replace(cfg.kinematics, enabled=True))
+
     run(cfg, no_hardware=args.no_hardware)
 
 

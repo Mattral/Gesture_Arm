@@ -1,5 +1,3 @@
-
-
 # Gesture Arm
 
 **Real-time multimodal robot control via hand gestures and voice, with LSTM temporal stabilization and geometric inverse kinematics.**
@@ -33,29 +31,49 @@ Frame-by-frame landmark coordinates are fed through a sliding-window LSTM that s
 
 ## Architecture
 
+
 ```
-Webcam (1280×720)
+Webcam (1280×720, ~30 fps)
     │
     ▼
-HandTracker          ← cvzone / MediaPipe, 21 landmarks
-    │  features (42,) = normalized [x/W, y/H] × 21
-    ▼
-GeometricIKSolver    ← (optional, --ik flag) hand pos → TCP → joint angles
-    │  IKSolution.OK → servo angles directly
-    │  UNREACHABLE / JOINT_LIMIT / IN_DEADZONE → fallthrough ↓
-    ▼
-LSTMStabilizer       ← seq-15 sliding window → smoothed û_t
-    │  or BaselineMapper (fallback / comparison)
-    ▼
-ArmController        ← pyfirmata → Arduino → servos (pins 3, 5, 6)
-BaseController       ← pyfirmata → Arduino → L298N  (pins 7–13)
+HandTracker  ←  cvzone / MediaPipe
+    │  HandState: features (42,) normalized  |  landmarks (21,3)  |  pinch_distance
     │
     ▼
-MetricsLogger        ← latency L, stability S, method tag → CSV
+┌─────────────────── IK layer (optional, --ik) ────────────────────┐
+│  hand_position_to_target()  →  GeometricIKSolver.solve(px,py,pz) │
+│  reachable? ──yes──► angles[ ]    not reachable? ──► fallthrough  │
+└──────────────────────────────────────────────────────────────────┘
+    │  (if IK disabled or target unreachable)
+    ▼
+LSTMStabilizer   ←  k=15 sliding window  →  LSTM(64)→Dense(32)→Dense(3,σ)
+    │  or BaselineMapper  (warm-up / fallback)
+    ▼
+ArmController.write(angles)  →  pyFirmata  →  Arduino Uno
+    │  SG90 servos: X→D3  Y→D5  Z→D6  |  L298N motors: D7–D13
+    ▼
+MetricsLogger  →  data/metrics_log.csv  (S, L, method per frame)
 
 ASRListener  ──────────────────────────────► BaseController
-TTSEngine    ◄─────────────────────────────── command feedback
+TTSEngine    ◄─────────────────────────────── command confirmation
 ```
+
+
+ 
+---
+
+
+
+## Results
+
+| Method | S (stability ↓) | L median (ms) ↓ | L p95 (ms) | Real-time |
+|---|---|---|---|---|
+| Baseline (linear, per-frame) | 18.4 | 52 | 90 | ✓ |
+| LSTM (k = 15) | 12.8 | 40 | 68 | ✓ |
+| **Geometric IK** | **10.1** | **41** | **70** | **✓** |
+| Δ IK vs baseline | −45.1% | −21.2% | −22.2% | — |
+
+Metrics: **S** = `(1/T) Σ(u_t − ū)²` (lower = smoother).  **L** = `t_actuation − t_capture` (ms).
 
 ---
 
@@ -109,6 +127,64 @@ Press **Q** to quit. Metrics summary is printed on exit.
 
 ---
 
+
+## Controls
+
+### Right hand → Mobile base (left camera zone)
+
+| Gesture | Action |
+|---|---|
+| Hand in upper zone | Forward |
+| Hand in lower zone | Reverse |
+| Hand in left zone | Turn left |
+| Hand in right zone | Turn right |
+| Closed fist | **Stop** (highest priority override) |
+
+### Left hand → Arm (right camera zone)
+
+**LSTM / Baseline mode** (default):
+
+| Motion | Servo | Range |
+|---|---|---|
+| Move left/right | X — pan | 60°–180° |
+| Move up/down | Y — tilt | 40°–140° |
+| Pinch open/close | Z — grip | 100°–150° |
+
+**IK mode** (`--ik` flag):
+
+| Motion | Effect |
+|---|---|
+| Move hand anywhere in zone | Arm tip moves to corresponding Cartesian position |
+| Pinch open/close | Grip servo (pass-through, unchanged) |
+| Hand outside workspace | Graceful fallback to LSTM/baseline |
+
+### Voice commands
+
+| Word | Action |
+|---|---|
+| "forward" / "go" | Move forward |
+| "reverse" / "back" | Move backward |
+| "left" | Turn left |
+| "right" | Turn right |
+| "stop" | Stop motors |
+
+---
+
+## IK mode: tuning link lengths
+
+Measure your physical arm and update `gesture_arm/config/default.yaml`:
+
+```yaml
+kinematics:
+  enabled: false           # or use --ik flag at runtime
+  link1_cm: 10.0           # shoulder pivot → end-effector mount
+  link2_cm: 8.0            # end-effector mount → TCP (fingertip)
+  servo_x_neutral_deg: 120.0
+  servo_y_zero_deg: 40.0
+```
+
+---
+
 ## Hardware
 
 | Component | Part | Pin(s) |
@@ -121,7 +197,7 @@ Press **Q** to quit. Metrics summary is printed on exit.
 | Camera | Any USB webcam | USB |
 | Microphone | Any USB/built-in mic | USB |
 
-Total BOM cost: ~$25 USD.
+Total BOM cost: ~$45 USD.
 
 ---
 
@@ -150,38 +226,61 @@ Metrics definitions (paper Section VI):
 ```
 gesture_arm/
 ├── gesture_arm/
-│   ├── vision/         # HandTracker — landmark extraction + normalization
-│   ├── models/         # LSTMStabilizer, BaselineMapper, train()
-│   ├── hardware/       # ArmController, BaseController (pyfirmata)
+│   ├── vision/         # HandTracker — landmark extraction + normalization (Eq. 1)
+│   ├── models/         # LSTMStabilizer (Eqs. 3–12), BaselineMapper (Eq. 2), train()
+│   ├── kinematics/     # GeometricIKSolver (Eqs. 15–24)  ← new in v1.1
+│   ├── hardware/       # ArmController, BaseController (pyFirmata)
 │   ├── speech/         # ASRListener (thread), TTSEngine (thread)
-│   ├── evaluation/     # MetricsLogger — S, L → CSV
+│   ├── evaluation/     # MetricsLogger — S (Eq. 13), L (Eq. 14) → CSV
 │   ├── config/         # default.yaml + typed settings dataclasses
-│   └── run.py          # Main control loop entry point
+│   └── run.py          # Main control loop — IK → LSTM → baseline cascade
 ├── scripts/
-│   ├── collect.py      # Data collection mode
+│   ├── collect.py      # Training data collection
 │   └── train.py        # LSTM training
 ├── tests/
-│   └── test_core.py    # pytest unit tests (hardware-free)
+│   └── test_core.py    # pytest unit tests (hardware-free, 23 IK tests)
 ├── notebooks/
-│   └── benchmark_analysis.ipynb
+│   └── benchmark_analysis.ipynb   # Reproduces Table II from metrics_log.csv
 ├── firmware/
 │   └── server.ino      # StandardFirmata for Arduino Uno
 ├── docker/
 │   └── Dockerfile.sim  # Simulation image (no Arduino needed)
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── API_REFERENCE.md
+│   ├── HARDWARE.md
+│   ├── RESEARCH.md     # Paper-to-code mapping, all equations
+│   ├── SETUP.md
+│   ├── SYSTEM_DESIGN.md
+│   └── TROUBLESHOOTING.md
 └── .github/workflows/
     └── ci.yml          # Lint + test + Docker build on every push
 ```
 
 ---
 
+## Benchmark notebook
+
+```bash
+jupyter notebook notebooks/benchmark_analysis.ipynb
+```
+
+Reads `data/metrics_log.csv` and produces:
+- Rolling stability S comparison (all three modes)
+- Latency L histogram
+- Servo trajectory plots
+- Table II (auto-generated, matches the paper)
+
+---
+
 ## Configuration
 
-All parameters live in `gesture_arm/config/default.yaml`. No hardcoded constants in source.
+All parameters in `gesture_arm/config/default.yaml`. Override the serial port without editing the file:
 
-Override the serial port without editing the file:
 ```bash
-GESTURE_ARM_PORT=/dev/ttyUSB0 python -m gesture_arm.run
+GESTURE_ARM_PORT=/dev/ttyUSB0 python -m gesture_arm.run --ik
 ```
+
 
 ---
 
@@ -192,7 +291,24 @@ pytest tests/ -v
 pytest tests/ -v --cov=gesture_arm   # with coverage
 ```
 
-Tests run without hardware or TensorFlow — safe for CI.
+All 23 IK tests and all existing tests run without hardware, network, or TensorFlow.
+
+
+---
+
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| [docs/SETUP.md](docs/SETUP.md) | Hardware assembly, installation, first run, IK tuning |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow, LSTM design, IK model, threading |
+| [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) | Engineering decisions, trade-offs |
+| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | All public classes and methods |
+| [docs/HARDWARE.md](docs/HARDWARE.md) | BOM, wiring diagrams, power supply |
+| [docs/RESEARCH.md](docs/RESEARCH.md) | Paper-to-code mapping, all equations |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Error messages and fixes |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, PR process |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
 
 ---
 
@@ -210,7 +326,7 @@ Tests run without hardware or TensorFlow — safe for CI.
 If you use this work, please cite:
 
 ```bibtex
-@article{Mattral2025gesture,
+@article{Mattral2026gesture,
   title   = {A Low-Cost Multimodal Gesture Control System with
              LSTM-Based Temporal Stabilization for Real-Time Robotics},
   author  = {Min Htet Myet},
@@ -222,4 +338,4 @@ If you use this work, please cite:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).

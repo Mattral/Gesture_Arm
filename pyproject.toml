@@ -3,14 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name = "gesture_arm"
-version = "1.0.0"
-description = "Low-cost multimodal gesture control system with LSTM temporal stabilization"
+name = "gesture-arm"
+version = "1.1.0"
+description = "Low-cost multimodal gesture control system with LSTM temporal stabilization and geometric inverse kinematics"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Min Htet Myet" }]
-keywords = ["robotics", "gesture-control", "lstm", "computer-vision", "arduino"]
+keywords = ["robotics", "gesture-control", "lstm", "inverse-kinematics", "computer-vision", "arduino"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -53,14 +53,14 @@ dev = [
 ]
 
 [project.scripts]
-gesture_arm-run      = "gesture_arm.run:main"
-gesture_arm-collect  = "scripts.collect:main"
-gesture_arm-train    = "scripts.train:main"
+gesture-arm-run      = "gesture_arm.run:main"
+gesture-arm-collect  = "scripts.collect:main"
+gesture-arm-train    = "scripts.train:main"
 
 [project.urls]
-Homepage   = "https://github.com/Mattral/gesture_arm"
-Repository = "https://github.com/Mattral/gesture_arm"
-Issues     = "https://github.com/Mattral/gesture_arm/issues"
+Homepage   = "https://github.com/minhtetmyet/gesture-arm"
+Repository = "https://github.com/minhtetmyet/gesture-arm"
+Issues     = "https://github.com/minhtetmyet/gesture-arm/issues"
 
 [tool.pytest.ini_options]
 testpaths   = ["tests"]
