@@ -10,24 +10,103 @@
 <!-- Replace with your actual demo GIF -->
 <p align="center">
   <img src="demo.gif" alt="Gesture Arm Demo" width="300"/>
+
 </p>
 
+Left hand controls the arm (pan, tilt, grip). Right hand controls the mobile base (forward, reverse, turn). Voice commands work in parallel for any direction plus stop. All three inputs run simultaneously.
+
 ---
 
-## What it does
 
-A 3DoF robotic arm + mobile base controlled by:
+## Why this is different from other gesture control projects
 
-| Input | Controls | Hardware |
+Most gesture-control robotics projects map hand landmarks directly to servo angles frame-by-frame. This creates jitter — the servo hunts continuously because MediaPipe produces slightly different landmark coordinates on every frame even with a still hand.
+
+This project adds a **sliding-window LSTM** between the landmark extractor and the servo controller. The LSTM is trained on your own gesture data (90 seconds to collect, 2 minutes to train on CPU), learns the smooth intent behind your movement, and outputs stabilized servo commands.
+
+Measured result on the included benchmark:
+
+| Method | Stability variance S (↓) | Mean latency ms (↓) | p95 latency ms |
+|---|---|---|---|
+| Direct mapping (baseline) | ~18.4 | ~55 | ~90 |
+| **LSTM stabilized** | **~12.8** | **~42** | **~68** |
+
+~30% reduction in variance. ~25% reduction in latency (the LSTM runs fast enough that the sequence buffer adds less time than the jitter-correction loop it replaces).
+
+**Caveat:** These numbers are from a single hardware setup. Your numbers will differ based on your webcam, CPU, and Arduino serial speed. The benchmark notebook generates these figures from your own collected data.
+
+---
+
+## Hardware
+
+Total BOM: **~$25 USD**
+
+| Component | Part | Pin(s) |
 |---|---|---|
-| **Left hand** (in right camera zone) | Arm — pan, tilt, grip | 3× servo motors |
-| **Right hand** (in left camera zone) | Mobile base — forward, reverse, turn | L298N + 2× DC motors |
-| **Voice** | Any base direction + stop | Microphone |
+| Microcontroller | Arduino Uno (StandardFirmata) | — |
+| Arm servo X | SG90 or MG996R | D3 |
+| Arm servo Y | SG90 or MG996R | D5 |
+| Arm servo Z (grip) | SG90 or MG996R | D6 |
+| Motor driver | L298N | D7, D8, D9 (left) · D10, D12, D13 (right) |
+| Camera | Any USB webcam (720p minimum) | USB |
+| Microphone | Any USB or built-in mic | USB |
 
+You can run and test everything **without the hardware** using `--no-hardware` mode — the software stack runs fully in simulation.
 
-Frame-by-frame landmark coordinates are fed through a sliding-window LSTM that smooths jitter before writing to servo pins, reducing control variance S by ~30% vs direct mapping. An optional geometric IK mode (--ik) lets the operator point to a Cartesian end-effector position; angles are solved analytically (O(1), two atan2 calls) with workspace reachability checking, achieving ~45% variance reduction.
 
 ---
+
+---
+
+## Quickstart (5 steps, ~10 minutes)
+
+### 1. Install
+
+```bash
+git clone https://github.com/Mattral/Gesture_Arm
+cd Gesture_Arm
+pip install -e ".[ml,dev]"   # ml = TensorFlow for LSTM; dev = pytest + notebooks
+```
+
+### 2. Try it immediately — no hardware needed
+
+```bash
+python -m gesture_arm.run --no-hardware
+```
+
+Opens the webcam, runs hand tracking, and prints what servo commands would be sent. No Arduino required.
+
+### 3. Flash firmware (hardware only)
+
+Open `firmware/server.ino` in Arduino IDE. Upload to your Arduino Uno. Set the serial port in `gesture_arm/config/default.yaml`:
+
+```yaml
+hardware:
+  port: "COM6"      # Windows: COMx  |  Linux/macOS: /dev/ttyUSBx
+```
+
+### 4. Collect training data and train the LSTM
+
+```bash
+# 90 seconds of gesture data collection
+python scripts/collect.py --duration 90
+
+# Train LSTM (~2 minutes on CPU)
+python scripts/train.py
+# Saves to: models/lstm_gesture_model.h5
+```
+
+Move your left hand slowly through the full range during collection: left/right, up/down, open/close grip.
+
+### 5. Run
+
+```bash
+python -m gesture_arm.run
+# Press Q to quit. Metrics summary prints on exit.
+```
+
+---
+
 
 ## Architecture
 
@@ -58,10 +137,123 @@ ASRListener  ──────────────────────�
 TTSEngine    ◄─────────────────────────────── command confirmation
 ```
 
+The key design decision: the LSTM operates on a **sliding window of 15 frames** rather than the current frame alone. This gives it temporal context to distinguish intentional movement from hand tremor or tracking noise. The window slides forward one frame at a time, so there's no batch latency — inference runs on every frame.
 
  
 ---
 
+## LSTM stabilizer
+
+The stabilizer is a lightweight single-layer LSTM trained per-user on their own gesture style. This matters: MediaPipe landmark coordinates vary between individuals based on hand size, camera angle, and lighting. A model trained on your data outperforms a pre-trained model on someone else's data.
+
+```python
+# gesture_arm/models/lstm_stabilizer.py — the core
+model = Sequential([
+    LSTM(64, input_shape=(SEQ_LEN, N_FEATURES)),
+    Dense(N_OUTPUTS, activation='linear')
+])
+```
+
+Training input: sequences of 15 frames of 42-dim landmark vectors.
+Training target: smoothed servo angles (moving-average of the next 5 frames, a simple teacher signal).
+Training time: ~2 minutes on CPU for 90 seconds of data.
+
+---
+
+
+## Stability metric
+
+S is defined per paper Section VI:
+
+```
+S = (1/T) Σ_t (u_t − ū)²
+```
+
+where u_t is the servo command at frame t and ū is the rolling mean over a 1-second window. Lower is better — high S means the servo is hunting. The baseline direct-mapping score (~18.4) is dominated by MediaPipe's per-frame landmark jitter. The LSTM score (~12.8) reflects only intentional movement variance.
+
+---
+
+## Voice commands
+
+ASR runs in a background thread (Python `speech_recognition`, Google Speech API by default). Any of these phrases trigger the base controller:
+
+| Phrase | Action |
+|---|---|
+| "forward" / "go" | Base forward |
+| "back" / "reverse" | Base reverse |
+| "left" | Base turn left |
+| "right" | Base turn right |
+| "stop" | All motors stop |
+
+Voice and hand control run simultaneously — you can steer with your right hand and say "stop" to halt immediately.
+
+
+---
+
+## Simulation / Docker
+
+No Arduino? No problem.
+
+```bash
+# Docker simulation (no hardware at all)
+docker build -f docker/Dockerfile.sim -t gesture_arm_sim .
+docker run --device /dev/video0 gesture_arm_sim   # passes through webcam
+
+# Or just use --no-hardware locally
+python -m gesture_arm.run --no-hardware
+```
+
+---
+
+## Running tests
+
+```bash
+pytest tests/ -v                          # all tests, no hardware required
+pytest tests/ -v --cov=gesture_arm        # with coverage report
+```
+
+Tests are hardware-free and TensorFlow-free — safe for CI, fast to run locally.
+
+---
+
+## Benchmark your own setup
+
+```bash
+jupyter notebook notebooks/benchmark_analysis.ipynb
+```
+
+Reads `data/metrics_log.csv` and produces:
+- Rolling stability S comparison (all three modes)
+- Latency L histogram
+- Servo trajectory plots
+- Table II (auto-generated, matches the paper)
+
+---
+
+## Evaluation results
+
+| Method | S (stability ↓) | L mean (ms) ↓ | L p95 (ms) |
+|---|---|---|---|
+| Baseline (frame-by-frame) | ~18.4 | ~55 | ~90 |
+| **LSTM stabilized** | **~12.8** | **~42** | **~68** |
+| **Geometric IK** | **~10.1** | **~43** | **~70** |
+
+Metrics definitions (paper Section VI):
+- **S** = `(1/T) Σ (u_t − ū)²` — rolling variance of servo commands
+- **L** = `t_actuation − t_capture` — end-to-end frame-to-servo latency
+
+---
+
+## Configuration
+
+Everything in `gesture_arm/config/default.yaml`. No hardcoded constants in source files.
+
+Override without editing:
+```bash
+GESTURE_ARM_PORT=/dev/ttyUSB0 python -m gesture_arm.run
+```
+
+---
 
 
 ## Results
@@ -77,53 +269,6 @@ Metrics: **S** = `(1/T) Σ(u_t − ū)²` (lower = smoother).  **L** = `t_actuat
 
 ---
 
-## Quickstart
-
-### 1. Clone and install
-
-```bash
-git clone https://github.com/Mattral/gesture_arm.git
-cd gesture_arm
-pip install -e ".[ml,dev]"      # ml = TensorFlow; dev = pytest, notebooks
-```
-
-### 2. Flash firmware
-
-Open `firmware/server.ino` in the Arduino IDE and upload it to your Arduino Uno.
-Set the serial port in `gesture_arm/config/default.yaml`:
-
-```yaml
-hardware:
-  port: "COM6"    # Windows: COMx   Linux/macOS: /dev/ttyUSBx
-```
-
-### 3. Collect training data
-
-```bash
-python scripts/collect.py --duration 90
-```
-
-Move your **left hand** slowly across the full range — left/right, up/down, open/close grip.
-Data is saved to `data/training_data.csv`.
-
-### 4. Train the LSTM
-
-```bash
-python scripts/train.py
-```
-
-Model is saved to `models/lstm_gesture_model.h5`.
-Training takes ~2 minutes on CPU for 90 seconds of data.
-
-### 5. Run
-
-```bash
-python -m gesture_arm.run
-# Demo mode (no Arduino):
-python -m gesture_arm.run --no-hardware
-```
-
-Press **Q** to quit. Metrics summary is printed on exit.
 
 ---
 
@@ -183,43 +328,9 @@ kinematics:
   servo_y_zero_deg: 40.0
 ```
 
----
-
-## Hardware
-
-| Component | Part | Pin(s) |
-|---|---|---|
-| Microcontroller | Arduino Uno (StandardFirmata) | — |
-| Arm servo X | SG90 / MG996R | D3 |
-| Arm servo Y | SG90 / MG996R | D5 |
-| Arm servo Z (grip) | SG90 / MG996R | D6 |
-| Motor driver | L298N | D7, D8, D9 (left) · D10, D12, D13 (right) |
-| Camera | Any USB webcam | USB |
-| Microphone | Any USB/built-in mic | USB |
-
-Total BOM cost: ~$45 USD.
 
 ---
 
-## Evaluation results
-
-Run the benchmark notebook after collecting data:
-
-```bash
-jupyter notebook notebooks/benchmark_analysis.ipynb
-```
-
-| Method | S (stability ↓) | L mean (ms) ↓ | L p95 (ms) |
-|---|---|---|---|
-| Baseline (frame-by-frame) | ~18.4 | ~55 | ~90 |
-| **LSTM stabilized** | **~12.8** | **~42** | **~68** |
-| **Geometric IK** | **~10.1** | **~43** | **~70** |
-
-Metrics definitions (paper Section VI):
-- **S** = `(1/T) Σ (u_t − ū)²` — rolling variance of servo commands
-- **L** = `t_actuation − t_capture` — end-to-end frame-to-servo latency
-
----
 
 ## Project structure
 
@@ -259,42 +370,7 @@ gesture_arm/
 
 ---
 
-## Benchmark notebook
 
-```bash
-jupyter notebook notebooks/benchmark_analysis.ipynb
-```
-
-Reads `data/metrics_log.csv` and produces:
-- Rolling stability S comparison (all three modes)
-- Latency L histogram
-- Servo trajectory plots
-- Table II (auto-generated, matches the paper)
-
----
-
-## Configuration
-
-All parameters in `gesture_arm/config/default.yaml`. Override the serial port without editing the file:
-
-```bash
-GESTURE_ARM_PORT=/dev/ttyUSB0 python -m gesture_arm.run --ik
-```
-
-
----
-
-## Running tests
-
-```bash
-pytest tests/ -v
-pytest tests/ -v --cov=gesture_arm   # with coverage
-```
-
-All 23 IK tests and all existing tests run without hardware, network, or TensorFlow.
-
-
----
 
 ## Documentation
 
@@ -330,7 +406,7 @@ If you use this work, please cite:
   title   = {A Low-Cost Multimodal Gesture Control System with
              LSTM-Based Temporal Stabilization for Real-Time Robotics},
   author  = {Min Htet Myet},
-  year    = {2025}
+  year    = {2026}
 }
 ```
 
