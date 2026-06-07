@@ -39,7 +39,7 @@ Measured result on the included benchmark:
 
 ## Hardware
 
-Total BOM: **~$25 USD**
+Total BOM: **~$45 USD**
 
 | Component | Part | Pin(s) |
 |---|---|---|
