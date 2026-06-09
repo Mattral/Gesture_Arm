@@ -1,16 +1,17 @@
-# Gesture Arm
+<h1 align="center">🤖 Gesture Arm</h1>
 
-**Real-time multimodal robot control via hand gestures and voice, with LSTM temporal stabilization and geometric inverse kinematics.**
-
-[![CI](https://github.com/Mattral/gesture_arm/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattral/gesture_arm/actions)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-
-<!-- Replace with your actual demo GIF -->
 <p align="center">
-  <img src="demo.gif" alt="Gesture Arm Demo" width="300"/>
+  <strong>Real-time multimodal robot control</strong><br>
+  <em>Hand gestures + voice, stabilized with LSTM and inverse kinematics.</em>
+</p>
 
+<p align="center">
+  <a href="https://github.com/Mattral/gesture_arm/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Mattral/gesture_arm/ci.yml?branch=main&label=CI&style=for-the-badge&logo=github"></a>
+  <img alt="Python" src="https://img.shields.io/badge/python-3.9%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white">
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge"></a>
+  <a href="https://doi.org/10.5281/zenodo.20615489">
+    <img alt="DOI" src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20615489-7C3AED?style=for-the-badge&logo=zenodo&logoColor=white">
+  </a>
 </p>
 
 Left hand controls the arm (pan, tilt, grip). Right hand controls the mobile base (forward, reverse, turn). Voice commands work in parallel for any direction plus stop. All three inputs run simultaneously.
