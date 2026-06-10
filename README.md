@@ -14,7 +14,13 @@
   </a>
 </p>
 
-Left hand controls the arm (pan, tilt, grip). Right hand controls the mobile base (forward, reverse, turn). Voice commands work in parallel for any direction plus stop. All three inputs run simultaneously.
+<p align="center">
+  <img src="demo.gif" alt="Gesture Arm Demo" width="300"/>
+</p>
+
+Left hand controls the arm (pan, tilt, grip). Right hand controls the mobile base (forward, reverse, turn). 
+
+Voice commands work in parallel for any direction plus stop. All three inputs run simultaneously.
 
 ---
 
