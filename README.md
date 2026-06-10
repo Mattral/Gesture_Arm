@@ -21,6 +21,8 @@ Left hand controls the arm (pan, tilt, grip). Right hand controls the mobile bas
 
 Voice commands work in parallel for any direction plus stop. All three inputs run simultaneously.
 
+Originally built as a student project back in my student days, refined and published in 2026 while working as an ML systems engineer.
+
 ---
 
 
