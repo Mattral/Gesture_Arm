@@ -6,7 +6,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mattral/gesture_arm/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Mattral/gesture_arm/ci.yml?branch=main&label=CI&style=for-the-badge&logo=github"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.9%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white">
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge"></a>
   <a href="https://doi.org/10.5281/zenodo.20615489">
